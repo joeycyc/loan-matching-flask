@@ -1,0 +1,8 @@
+.*
+!/.gitignore
+app/dash/data/input/*
+app/dash/data/output/*
+!app/dash/data/input/note.txt
+!app/dash/data/output/note.txt
+venv
+__pycache__/

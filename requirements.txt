@@ -1,0 +1,10 @@
+pyyaml
+numpy
+pandas
+openpyxl
+python-dateutil
+plotly
+flask
+flask_sqlalchemy
+dash
+python-dotenv
