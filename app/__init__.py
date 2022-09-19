@@ -4,20 +4,31 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
-def init_app():
+def create_app():
     """Initialize the core application."""
-    app = Flask(__name__, instance_relative_config=False)
-    app.config.from_object('config.DevConfig')
+    flask_server = Flask(__name__, instance_relative_config=False)
+    flask_server.config.from_object('config.DevConfig')
 
-    # Initialize Plugins
-    db.init_app(app)
+    # Register extensions
+    db.init_app(flask_server)
 
-    with app.app_context():
-        # Include routes
-        from . import routes
+    with flask_server.app_context():
+        # Register blueprints
+        from .routes import server_bp
+        flask_server.register_blueprint(server_bp)
 
-        # Import Dash application
-        from .dash.dashboard_01 import init_dashboard
-        app = init_dashboard(app)
+        # TODO: blueprint to be added
+        from .dash.routes import dash_bp
+        flask_server.register_blueprint(dash_bp)
 
-        return app
+        # Process dash apps
+        # TODO: add_dashboard to be added
+        from app.dash.dashboard_01 import add_dashboard as add_dashboard_01
+        flask_server = add_dashboard_01(flask_server)
+        from app.dash.dashboard_02 import add_dashboard as add_dashboard_02
+        flask_server = add_dashboard_02(flask_server)
+
+        return flask_server
+
+
+
