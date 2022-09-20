@@ -16,13 +16,10 @@ def create_app():
         # Register blueprints
         from .routes import server_bp
         flask_server.register_blueprint(server_bp)
-
-        # TODO: blueprint to be added
         from .dash.routes import dash_bp
         flask_server.register_blueprint(dash_bp)
 
         # Process dash apps
-        # TODO: add_dashboard to be added
         from app.dash.dashboard_01 import add_dashboard as add_dashboard_01
         flask_server = add_dashboard_01(flask_server)
         from app.dash.dashboard_02 import add_dashboard as add_dashboard_02

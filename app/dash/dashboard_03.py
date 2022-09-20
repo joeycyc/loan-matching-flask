@@ -5,6 +5,7 @@ import copy
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dash import Dash, dcc, html, Input, Output, State, ctx
+import uuid
 
 DASHBOARD_ID = 'dashboard_03'
 URL_BASE = '/dashboard_03/'
@@ -1426,12 +1427,12 @@ def add_dashboard(server):
         dash_config = yaml.safe_load(cf)
 
     # Initial matching run with default values
-    init_matching_object = LoanMatching(dash_config)
+    matching_object = LoanMatching(dash_config)
 
     # Initialize Dash UI
-    all_stage_dicts = list(init_matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
+    all_stage_dicts = list(matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
     all_stages = [stage_dict['value'] for stage_dict in all_stage_dicts]
-    all_projects = init_matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
+    all_projects = matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
 
     # Create Dash app
     dash_app = Dash(
@@ -1453,9 +1454,9 @@ def add_dashboard(server):
     uc_repl_default_values_ = [
         [x['value'] for x in uc_repl_opts_][i]
         for i, y in enumerate([
-            init_matching_object.UC_EVERGREEN,
-            init_matching_object.UC_FULL_COVER,
-            init_matching_object.UC_CHECK_SAVING_BY_AREA
+            matching_object.UC_EVERGREEN,
+            matching_object.UC_FULL_COVER,
+            matching_object.UC_CHECK_SAVING_BY_AREA
         ])
         if y
     ]  # ['input_uc_evergreen', 'input_uc_check_saving_by_area']
@@ -1473,16 +1474,16 @@ def add_dashboard(server):
                     # Target prepayment date delta (tpp_date_delta_ymd)
                     html.Label('Target prepayment date delta (year/ month/ day): ', style={'font-weight': 'bold'}),
                     dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
+                              value=matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
                     dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
+                              value=matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
                     dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
+                              value=matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
                     html.Br(),
                     # Equity
                     html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
                     dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
-                              value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
+                              value=matching_object.DASH_CONFIG['equity']['amt_in_billion']),
                     html.Br(),
                     # Uncommitted Revolver options
                     html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
@@ -1531,22 +1532,14 @@ def add_dashboard(server):
             ], className='row', id='matching-scheme-info-box'),
 
             # (4) Graph
-            html.Div(dcc.Graph(id='figure-output'), className='card')
+            html.Div(dcc.Graph(id='figure-output'), className='card'),
+
+            # (5) Store
+            # dcc.Store(id="session", data=dict(uid=str(uuid.uuid4())))
         ])
 
-    # Initialize callbacks after the app is loaded
-    init_callbacks(dash_app, matching_object=init_matching_object)
-
-    return server
-
-
-def init_callbacks(dash_app, matching_object):
-    """Initialize call backs
-    Args:
-    - dash_app: Dash app object
-    - matching_object: LoanMatching object
-    """
-
+    # Callbacks
+    # TODO: Flask is stateful, global variable are shared among session - to be fixed
     @dash_app.callback(
         Output('selected-input-display', 'children'),
         Output('figure-output', 'figure'),
@@ -1566,8 +1559,8 @@ def init_callbacks(dash_app, matching_object):
     def update_plot(*args):
         triggered_id = ctx.triggered_id
         stage_to_display, projects_to_display, chart_type, bar_height, bar_height_range, \
-            _, tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
-            input_equity_amt, input_uc_options = args
+        _, tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
+        input_equity_amt, input_uc_options = args
 
         # Set default values if None and assign back to matching object
         tpp_date_delta_year = tpp_date_delta_year if tpp_date_delta_year is not None else -1
@@ -1658,4 +1651,16 @@ def init_callbacks(dash_app, matching_object):
             return {'display': 'none'}
         else:
             return {'display': 'block'}
+
+    return server
+
+
+# def init_callbacks(dash_app, matching_object):
+#     """Initialize call backs
+#     Args:
+#     - dash_app: Dash app object
+#     - matching_object: LoanMatching object
+#     """
+
+
 
