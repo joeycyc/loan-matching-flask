@@ -58,5 +58,5 @@ uc_evergreen: True
 matching_scheme:
   # TODO: Select the default matching scheme
   scheme_id: 2
-  full_cover: True  # Applicable for Scheme 2 only (UC replacement)
+  full_cover: False  # Applicable for Scheme 2 only (UC replacement)
   check_saving_by_area: True  # Applicable for Scheme 2 only (UC replacement)
