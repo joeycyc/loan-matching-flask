@@ -58,5 +58,10 @@ uc_evergreen: True
 matching_scheme:
   # TODO: Select the default matching scheme
   scheme_id: 2
-  full_cover: False  # Applicable for Scheme 2 only (UC replacement)
-  check_saving_by_area: True  # Applicable for Scheme 2 only (UC replacement)
+  # The following 2 parameters applicable for Scheme 2 and 3 only (UC replacement)
+  full_cover: False
+  check_saving_by_area: True
+  # The following 3 parameters applicable for Scheme 3 only (Revolver ceiling)
+  revolver_ceiling: 99999.0
+  revolver_ceiling_for: loan_matching # Whether the ceiling is set for loan_matching or acquisition
+  revolver_to_stay: max_cost  # Criteria of choose which revolver to stay for loan_matching or acquisition

@@ -8,18 +8,15 @@ from dash import Dash, dcc, html, Input, Output, State, ctx
 import pickle
 import codecs
 
-DASHBOARD_ID = 'dashboard_01d'
-URL_BASE = '/dashboard_01d/'
+DASHBOARD_ID = 'dashboard_04'
+URL_BASE = '/dashboard_04/'
 
 
 class LoanMatching:
 
     def __init__(self, dash_config):
-        '''
-        --------------------
-        (0) Read Config Data and Define Global Variables
-        --------------------
-        '''
+        """Initialize LoanMatching object."""
+        '''(0) Read Config Data and Define Global Variables'''
         self.DASH_CONFIG = dash_config
 
         self.INPUT_DATA_DIR = self.DASH_CONFIG['data']['input']['dir']
@@ -48,8 +45,38 @@ class LoanMatching:
         self.WKING_FACILITIES_DF = pd.DataFrame()
         self.WKING_PROJECTS_DF = pd.DataFrame()
         self.WKING_FACILITIES_DICT = dict()
+        # Example:
+        # {545: {
+        #     'loan_facility_id': 545, 'loan_id': 156, 'loan_sub_type': 'T', 'tranche': '', 'currency_id': 1,
+        #     'facility_amount': 800000000.0, 'available_period_from': datetime.date(2021, 3, 31),
+        #     'available_period_to': datetime.date(2021, 6, 30), 'reference_id': '202103MUFGHKD1700.0M3.0Y001',
+        #     'borrower_id': 3.0, 'guarantor_id': 2.0, 'lender_id': 73.0, 'committed': 'C', 'loan_type': 'C',
+        #     'project_loan_share': '', 'project_loan_share_jv': nan, 'facility_date': datetime.date(2021, 3, 31),
+        #     'expiry_date': datetime.date(2024, 3, 29), 'withdrawn': 'N', 'lender_short_code': 'MUFG',
+        #     'lender_name': 'MUFG Bank, Ltd.', 'lender_short_form': 'MUFG', 'company_name': 'W Finance Limited',
+        #     'company_short_name': 'W Finance', 'company_type': 'BC', 'margin': 0.74, 'comm_fee_amount': nan,
+        #     'comm_fee_margin': nan, 'comm_fee_margin_over': nan, 'comm_fee_margin_below': nan, 'all_in_price': 0.97,
+        #     'net_margin': 0.74, 'upfront_fee': 0.69, 'facility_name': '3Y$0.8b-MUFG-CommittedTerm(545)',
+        #     'target_prepayment_date': datetime.date(2023, 3, 29), 'facility_amount_inB': 0.8,
+        #     'available_period_from_idx':-539, 'available_period_to_idx': -448, 'facility_date_idx': -539,
+        #     'expiry_date_idx': 555, 'target_prepayment_date_idx': 189,
+        #     'vector': array([0., 0., 0., ..., 0., 0., 0.])
+        # },
+        #     xxx: {}, xxx: {}, ...}
         self.WKING_PROJECTS_DICT = dict()
+        # Example:
+        # {19: {
+        #     'project_id': 19, 'project_name': 'KTB', 'start_date': datetime.date(2018, 11, 30),
+        #     'end_date': datetime.date(2022, 11, 30), 'land_cost': 6.36, 'project_loan_share_jv': nan,
+        #     'land_cost_60_pct_inB': 3.81, 'solo_jv': 'Solo', 'reference': 'land_cost reviewed by BankingTeam',
+        #     'start_date_idx': -1391, 'end_date_idx': 70, 'vector': array([0., 0., 0., ..., 0., 0., 0.])
+        # },
+        #     xxx: {}, xxx: {}, ...}
         self.MATCHED_ENTRIES = list()
+        # Example:
+        # [{'loan_facility_id': 545, 'project_id': 19, 'vector': array([0., 0., 0., ..., 0., 0., 0.]),
+        #   'match_type': ('normal' | 'replacement' | 'reserved' | 'set_aside')},
+        #  {}, {}]
 
         # Output data
         self.STAGED_OUTPUTS = dict()  # Output per stage in dict format
@@ -100,8 +127,11 @@ class LoanMatching:
         # For matching_main_proc()
         self.UC_FULL_COVER = self.DASH_CONFIG['matching_scheme']['full_cover']
         self.UC_CHECK_SAVING_BY_AREA = self.DASH_CONFIG['matching_scheme']['check_saving_by_area']
+        self.REVOLVER_CEILING = self.DASH_CONFIG['matching_scheme']['revolver_ceiling']
+        self.REVOLVER_CEILING_FOR = self.DASH_CONFIG['matching_scheme']['revolver_ceiling_for']
+        self.REVOLVER_TO_STAY = self.DASH_CONFIG['matching_scheme']['revolver_to_stay']
 
-        # Matching
+        '''(1) Run initial matching'''
         self.load_data()
         self.preprocess_data()
         self.init_working_data()
@@ -349,7 +379,7 @@ class LoanMatching:
             (self.FACILITIES_DF['loan_type'] != 'P') &
             (self.FACILITIES_DF['withdrawn'] != 'Y') &
             (self.FACILITIES_DF['target_prepayment_date'] >= self.DAY_ZERO)
-            ]
+        ]
         self.WKING_PROJECTS_DF = self.PROJECTS_DF[self.PROJECTS_DF['end_date'] >= self.DAY_ZERO]
 
         # Find boundaries
@@ -431,6 +461,35 @@ class LoanMatching:
                 # Update values in master
                 self.WKING_FACILITIES_DICT[best_match_fac_idx]['vector'] -= best_overlapping
                 self.WKING_PROJECTS_DICT[best_match_proj_idx]['vector'] -= best_overlapping
+        return
+
+    def std_solo_then_jv_matching(self, stage: str, loan_sub_type: str):
+        """Standard Solo -> JV matching for a specific stage
+        Args:
+            - stage: Stage number
+            - loan_sub_type: Loan subtype, either '<Initial>', 'T', 'R', 'Equity'
+        """
+        for sjn, solo_jv in enumerate(['Solo', 'JV']):
+            # Sub-set the matching batch
+            proj_idxs = [proj['project_id'] for proj in list(self.WKING_PROJECTS_DICT.values())
+                         if proj['solo_jv'] == solo_jv]
+            if loan_sub_type == 'R':  # For Stage 2, only select Committed Revolver
+                fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
+                            if (fac['loan_sub_type'] == loan_sub_type) and (fac['committed'] == 'C')]
+            else:
+                fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
+                            if fac['loan_sub_type'] == loan_sub_type]
+            # Matching by area
+            self.matching_by_area(fac_idxs, proj_idxs)
+        # Total shortfall
+        ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+        # Output per stages: Term -> Revolver
+        self.STAGED_OUTPUTS['stage ' + str(stage)] = {
+            'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+            'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+            'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+            'ttl_shortfall_vec': ttl_shortfall_vec
+        }
         return
 
     def replace_matched_entries(self, full_cover: bool = True, check_saving_by_area: bool = True):
@@ -576,7 +635,52 @@ class LoanMatching:
 
         return
 
-    def matching_main_proc(self, scheme: int = 1, uc_full_cover=None, uc_check_saving_by_area=None):
+    def set_aside_revolver(self,
+                           revolver_ceiling=99999.0,
+                           revolver_ceiling_for='loan_matching',
+                           revolver_to_stay='max_cost'):
+        """A procedure for setting aside revolver
+        Args:
+            - revolver_ceiling: Maximum amount of Committed Revolver included in matching (in HK$B)
+            - revolver_ceiling_for: Whether the ceiling is set for 'loan_matching' or 'acquisition'
+            - revolver_to_stay: Criteria of choose which revolver to stay for loan_matching or acquisition,
+                either it is 'max_cost', 'min_cost', 'max_period', 'min_period', 'max_net_margin' or 'min_net_margin'
+        Target is to divide Committed Revolver facilities into 2 groups: For loan matching OR For acquisition;
+        If revolver_ceiling of $10B is set for loan_matching with revolver_to_stay='max_cost',
+        it means only max $10B of Committed Revolver can be used for loan matching,
+        and the amount exceeding $10B will be set aside for acquisition;
+        the criteria for picking which Committed Revolver to stay for loan matching would be by 'max_cost'
+
+        Criteria of picking which Committed Revolver to stay for loan matching or acquisition:
+            - 'max_cost'/ 'min_cost': Facilities with max/ min total cost (i.e., net_margin x area) will stay
+            - 'max_period',
+            - 'min_period',
+            - 'max_net_margin'
+            - 'min_net_margin'
+        # TODO: max_area and min_area ?
+        return: void
+        """
+        if not isinstance(revolver_ceiling, (int, float)):
+            revolver_ceiling = 99999.0
+        if revolver_ceiling_for not in ['loan matching', 'For acquisition']:
+            revolver_ceiling = 'loan matching'
+        if revolver_to_stay not in ['max_cost', 'min_cost', 'max_period', 'min_period',
+                                    'max_net_margin' or 'min_net_margin']:
+            revolver_to_stay = 'max_cost'
+
+
+        # 'loan_sub_type': 'R', 'committed': 'C'
+        # 'net_margin': 0.74, 'vector': array([0., 0., 0., ..., 0., 0., 0.])
+        # In self.MATCHED_ENTRIES, append {'loan_facility_id': fac_idx, 'project_id': 999, 'vector': np.array([...], 'match_type': 'set_aside'}
+        return
+
+    def matching_main_proc(self,
+                           scheme: int = 1,
+                           uc_full_cover=None,
+                           uc_check_saving_by_area=None,
+                           revolver_ceiling=None,
+                           revolver_ceiling_for=None,
+                           revolver_to_stay=None):
         """Main matching procedures to produce staged outputs.
         Args:
             - scheme: int, the matching scheme id
@@ -586,6 +690,12 @@ class LoanMatching:
             uc_full_cover = self.UC_FULL_COVER
         if uc_check_saving_by_area is None:
             uc_check_saving_by_area = self.UC_CHECK_SAVING_BY_AREA
+        if revolver_ceiling is None:
+            revolver_ceiling = self.REVOLVER_CEILING
+        if revolver_ceiling is None:
+            revolver_ceiling_for = self.REVOLVER_CEILING_FOR
+        if revolver_to_stay is None:
+            revolver_to_stay = self.REVOLVER_TO_STAY
 
         '''(1) Matching per stage'''
         # ===== Matching Scheme 1 ===== #
@@ -598,23 +708,7 @@ class LoanMatching:
 
             # Output to STAGED_OUTPUTS
             for ln, loan_sub_type in enumerate(['<Initial>', 'T', 'R', 'Equity']):
-                for sjn, solo_jv in enumerate(['Solo', 'JV']):
-                    # Sub-set the matching batch
-                    fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
-                                if fac['loan_sub_type'] == loan_sub_type]
-                    proj_idxs = [proj['project_id'] for proj in list(self.WKING_PROJECTS_DICT.values())
-                                 if proj['solo_jv'] == solo_jv]
-                    # Matching by area
-                    self.matching_by_area(fac_idxs, proj_idxs)
-                # Total shortfall
-                ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-                # Output per stages: Initial -> Term -> Revolver -> Equity 5+6
-                self.STAGED_OUTPUTS['stage ' + str(ln)] = {
-                    'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                    'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                    'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                    'ttl_shortfall_vec': ttl_shortfall_vec
-                }
+                self.std_solo_then_jv_matching(str(ln), loan_sub_type)
 
             # === Scheme 1: matching scheme metadata === #
             self.STAGED_OUTPUTS_METADATA = {
@@ -646,27 +740,7 @@ class LoanMatching:
             # Output to STAGED_OUTPUTS
             # == Stage 0, 1 & 2 == #
             for ln, loan_sub_type in enumerate(['<Initial>', 'T', 'R']):
-                for sjn, solo_jv in enumerate(['Solo', 'JV']):
-                    # Sub-set the matching batch
-                    proj_idxs = [proj['project_id'] for proj in list(self.WKING_PROJECTS_DICT.values())
-                                 if proj['solo_jv'] == solo_jv]
-                    if loan_sub_type == 'R':  # For Stage 2, only select Committed Revolver
-                        fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
-                                    if (fac['loan_sub_type'] == loan_sub_type) and (fac['committed'] == 'C')]
-                    else:  # For Stage 0 and 1
-                        fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
-                                    if fac['loan_sub_type'] == loan_sub_type]
-                    # Matching by area
-                    self.matching_by_area(fac_idxs, proj_idxs)
-                # Total shortfall
-                ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-                # Output per stages: Initial -> Term -> Revolver -> Equity 5+6
-                self.STAGED_OUTPUTS['stage ' + str(ln)] = {
-                    'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                    'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                    'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                    'ttl_shortfall_vec': ttl_shortfall_vec
-                }
+                self.std_solo_then_jv_matching(str(ln), loan_sub_type)
 
             # == Stage 2a: Replace matched Committed Revolver (C-RTN) with Uncommitted Revolver (UC-RTN) == #
             # For STAGED_OUTPUTS, 'proj' remains the same as that in Stage 2,
@@ -688,29 +762,9 @@ class LoanMatching:
             }
 
             # == Stage 3: Match equity == #
-            for sjn, solo_jv in enumerate(['Solo', 'JV']):
-                # Sub-set the matching batch
-                proj_idxs = [proj['project_id'] for proj in list(self.WKING_PROJECTS_DICT.values())
-                             if proj['solo_jv'] == solo_jv]
-                fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
-                            if fac['loan_sub_type'] == 'Equity']
-                # Matching by area
-                self.matching_by_area(fac_idxs, proj_idxs)
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 3
-            self.STAGED_OUTPUTS['stage 3'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            self.std_solo_then_jv_matching('3', 'Equity')
 
             # === Scheme 2: matching scheme metadata === #
-            fc_ = 'UC full cover' if uc_full_cover else 'UC partial cover'
-            csa_ = 'saving = net margin diff x area' if uc_check_saving_by_area \
-                else 'saving = net margin diff only'
-            stage2a_suffix = ' (' + fc_ + ', ' + csa_ + ')'
             self.STAGED_OUTPUTS_METADATA = {
                 '_id': 2,
                 'name': 'T-R-E plus UC-RTN replacement',
@@ -726,13 +780,87 @@ class LoanMatching:
                     1: {'value': 'stage 1', 'label': 'Stage 1: Term'},
                     2: {'value': 'stage 2', 'label': 'Stage 2: Term + Committed RTN'},
                     3: {'value': 'stage 2a',
-                        # 'label': 'Stage 2a: Term + Committed RTN + Uncommitted RTN Replacement' + stage2a_suffix
                         'label': 'Stage 2a: Term + Committed RTN + Uncommitted RTN Replacement'},
                     4: {'value': 'stage 3',
                         'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
                 }
             }
         # ===== End of Matching Scheme #2 ===== #
+
+        # ===== Matching Scheme 3 ===== #
+        elif scheme == 3:
+            # === Scheme 3: matching procedure === #
+            # Stage 0: Initial
+            # Stage 0a: Revolver ceiling applied, set aside revolver not to be included in matching
+            # Stage 1: Term Facilities vs. Solo then JV
+            # Stage 2: Committed Revolver vs. Solo then JV
+            # Stage 2a: Uncommitted Revolver to replace Committed Revolver
+            # Stage 3: Equity vs. Solo then JV
+
+            # Output to STAGED_OUTPUTS
+            # == Stage 0: Initial == #
+            self.std_solo_then_jv_matching('0', '<Initial>')
+
+            # == Stage 0a: Set aside Committed Revolver due to revolver ceiling == #
+            self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
+            # Total shortfall
+            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+            # Output for Stage 2a
+            self.STAGED_OUTPUTS['stage 2a'] = {
+                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+                'ttl_shortfall_vec': ttl_shortfall_vec
+            }
+
+            # == Stage 1 & 2: Term and Committed Revolver == #
+            self.std_solo_then_jv_matching(1, 'T')
+            self.std_solo_then_jv_matching(2, 'R')
+
+            # == Stage 2a: Replace matched Committed Revolver (C-RTN) with Uncommitted Revolver (UC-RTN) == #
+            # For STAGED_OUTPUTS, 'proj' remains the same as that in Stage 2,
+            # update 'fac' for Committed Revolver and
+            # 'matched': MATCHED_ENTRIES (list of dicts), with each dict's format as
+            #  {'loan_facility_id': fac_idx, 'project_id': proj_idx, 'vector': overlapping, 'match_type': match_type}
+            self.replace_matched_entries(full_cover=uc_full_cover,
+                                         check_saving_by_area=uc_check_saving_by_area)
+
+            # Total shortfall
+            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+            # Output for Stage 2a
+            self.STAGED_OUTPUTS['stage 2a'] = {
+                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+                'ttl_shortfall_vec': ttl_shortfall_vec
+            }
+
+            # == Stage 3: Match equity == #
+
+            # === Scheme 3: matching scheme metadata === #
+            self.STAGED_OUTPUTS_METADATA = {
+                '_id': 3,
+                'name': 'T-R-E plus UC-RTN replacement and revolver ceiling',
+                'description': 'Stage 0: Initial; '
+                               'Stage 0a: Set aside Committed Revolver due to revolver ceiling'
+                               'Stage 1: Term Facilities vs. Solo then JV; '
+                               'Stage 2: Committed Revolver vs. Solo then JV; '
+                               'Stage 2a: Uncommitted Revolver to replace Committed Revolver; '
+                               'Stage 3: Equity vs. Solo then JV',
+                'short_description': 'Term -> Committed Revolver -> UC replacement -> Equity, Solo -> JV per stage, '
+                                     'with revolver ceiling',
+                'stages': {
+                    0: {'value': 'stage 0', 'label': 'Stage 0: Initial'},
+                    1: {'value': 'stage 0a', 'label': 'Stage 0a: Set aside Committed RTN'},
+                    2: {'value': 'stage 1', 'label': 'Stage 1: Term'},
+                    3: {'value': 'stage 2', 'label': 'Stage 2: Term + Committed RTN'},
+                    4: {'value': 'stage 2a',
+                        'label': 'Stage 2a: Term + Committed RTN + Uncommitted RTN Replacement'},
+                    5: {'value': 'stage 3',
+                        'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
+                }
+            }
+        # ===== End of Matching Scheme #3 ===== #
 
         '''(2) Tidy up result'''
         self.MASTER_OUTPUT = pd.DataFrame()
@@ -909,204 +1037,6 @@ class LoanMatching:
 (III) Visualization
 --------------------
 '''
-
-
-# # DEPRECATED
-# def get_gantt_1(stage_to_display, projects_to_display, *args, **kwargs):
-#     """Visualize data in gantt chart - version 1: 3 subplots for matched, shortfall, leftover, color = amount
-#     Args:
-#     - stage_to_display: str, 'stage 0' to 'stage 3'
-#     - projects_to_display: list of strings of project names
-#     """
-#     global MASTER_OUTPUT_VIS
-#
-#     MASTER_OUTPUT_VIS = MASTER_OUTPUT.copy()
-#     MASTER_OUTPUT_VIS['trace_value_str'] = MASTER_OUTPUT_VIS['trace_value'].apply(lambda x: '%.3f' % x)
-#
-#     gantts = ['gantt_matched', 'gantt_proj', 'gantt_fac']
-#     gantts_titles = ['Matched entries (HK$B)',
-#                      'Project needs (shortfall) (HK$B)',
-#                      'Loan facilities available (leftover) (HK$B)']
-#
-#     # Data filters for different gantt charts
-#     conditions_to_display = {'stage': MASTER_OUTPUT_VIS['stage'] == stage_to_display,
-#                              'project': MASTER_OUTPUT_VIS['project_name'].isin(projects_to_display)}
-#     conditions_to_display['gantt_matched'] = (MASTER_OUTPUT_VIS['output_type'] == 'matched') & \
-#         conditions_to_display['stage'] & conditions_to_display['project']
-#     conditions_to_display['gantt_proj'] = (MASTER_OUTPUT_VIS['output_type'] == 'shortfall') & \
-#         conditions_to_display['stage'] & conditions_to_display['project']
-#     conditions_to_display['gantt_fac'] = (MASTER_OUTPUT_VIS['output_type'] == 'leftover') & \
-#         conditions_to_display['stage'] & (MASTER_OUTPUT_VIS['loan_type'] != 'Equity')
-#
-#     subplot_data = {g: MASTER_OUTPUT_VIS[conditions_to_display[g]] for g in gantts}
-#
-#     # Dynamically define the heights of subplots given with the number of items
-#     # Calculate the number of items, at least 5
-#     subplot_num_items_to_display = {g: max(len(subplot_data[g]['y_label'].unique()), 5) for g in gantts}
-#     # Each bar 20px, Reserve 40px for subplot title
-#     subplot_heights = {g: subplot_num_items_to_display[g] * 20 + 40 for g in gantts}
-#     plot_height = sum(subplot_heights.values())
-#     subplot_height_shares = [subplot_heights[g] / plot_height for g in gantts]
-#
-#     ## spacing between 2 subplots
-#     subplot_vertical_spacing = 0.05
-#
-#     # marker_colorscale
-#     marker_colorscales = {k: v for k, v in zip(gantts, ['Greens', 'Reds', 'Purples'])}
-#
-#     # Manually construct Bar graph_object
-#     fig = make_subplots(rows=len(gantts), cols=1,
-#                         shared_xaxes=True,
-#                         row_heights=subplot_height_shares,
-#                         vertical_spacing=subplot_vertical_spacing,
-#                         subplot_titles=gantts_titles)
-#     for g_idx, g in enumerate(gantts):
-#         plot_df = subplot_data[g].iloc[::-1]  # Rows are displayed from the bottom to the top
-#         fig.add_trace(go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
-#                              y=plot_df['y_label'],
-#                              orientation='h',
-#                              base=plot_df['from_date'],
-#                              marker_color=plot_df['trace_value'],
-#                              marker_colorscale=marker_colorscales[g],
-#                              text=plot_df['trace_value_str'],
-#                              customdata=plot_df['to_date'],
-#                              hovertemplate='%{y}<br>%{base: %Y-%B-%a %d} to %{customdata: %Y-%B-%a %d}<br>Amount in $B: %{text}'),
-#                       row=g_idx+1, col=1)
-#
-#     fig.update_layout(height=plot_height)
-#     fig.update_yaxes(tickfont_size=9)
-#     fig.update_xaxes(type='date')
-#     fig.update_layout(coloraxis=dict(colorscale='tempo'), showlegend=False,
-#                       barmode='overlay')
-#     return fig
-#
-#
-# # DEPRECATED
-# def get_gantt_2(stage_to_display, projects_to_display, *args, **kwargs):
-#     """Visualize data in gantt chart - version 2: 3 subplots for shortfall+matched, leftover, equity, color = amount
-#     Args:
-#     - stage_to_display: str, 'stage (0|1|2|...)'
-#     - projects_to_display: list of strings of project names
-#     """
-#     global MASTER_OUTPUT_VIS
-#
-#     MASTER_OUTPUT_VIS = MASTER_OUTPUT.copy()
-#     MASTER_OUTPUT_VIS['trace_value_str'] = MASTER_OUTPUT_VIS['trace_value'].apply(lambda x: '%.3f' % x)
-#
-#     gantts = ['gantt_main', 'gantt_fac', 'gantt_equity']
-#     gantts_titles = ['Project needs and matched entries (HK$B)',
-#                      'Loan facilities available (leftover) (HK$B)',
-#                      'Equity (HK$B)']
-#
-#     # Data filters for different gantt charts
-#     conditions_to_display = {'stage': MASTER_OUTPUT_VIS['stage'] == stage_to_display,
-#                              'project': MASTER_OUTPUT_VIS['project_name'].isin(projects_to_display)}
-#     conditions_to_display['gantt_main'] = (MASTER_OUTPUT_VIS['output_type'].isin(['shortfall', 'matched'])) & \
-#         conditions_to_display['stage'] & conditions_to_display['project']
-#     conditions_to_display['gantt_fac'] = (MASTER_OUTPUT_VIS['output_type'] == 'leftover') & \
-#         conditions_to_display['stage'] & (MASTER_OUTPUT_VIS['loan_type'] != 'Equity')
-#     conditions_to_display['gantt_equity'] = (MASTER_OUTPUT_VIS['output_type'] == 'leftover') & \
-#         conditions_to_display['stage'] & (MASTER_OUTPUT_VIS['loan_type'] == 'Equity')
-#
-#     subplot_data = {g: MASTER_OUTPUT_VIS[conditions_to_display[g]] for g in gantts}
-#
-#     # Dynamically define the heights of subplots given with the number of items
-#     # Calculate the number of items, at least 5
-#     subplot_num_items_to_display = {g: max(len(subplot_data[g]['y_label'].unique()), 5) for g in gantts}
-#     # Each bar 20px, Reserve 40px for subplot title
-#     subplot_heights = {g: subplot_num_items_to_display[g] * 30 + 40 for g in gantts}
-#     plot_height = sum(subplot_heights.values())
-#     subplot_height_shares = [subplot_heights[g] / plot_height for g in gantts]
-#
-#     ## spacing between 2 subplots
-#     subplot_vertical_spacing = 0.05
-#
-#     # marker_colorscale
-#     # marker_colorscales = {k: v for k, v in zip(gantts, ['Greens', 'Reds', 'Purples'])}
-#
-#     # Manually construct Bar graph_object
-#     fig = make_subplots(rows=len(gantts), cols=1,
-#                         shared_xaxes=True,
-#                         row_heights=subplot_height_shares,
-#                         vertical_spacing=subplot_vertical_spacing,
-#                         subplot_titles=gantts_titles)
-#     for g_idx, g in enumerate(gantts):
-#         plot_df = subplot_data[g].copy()
-#         # General treatment for all subplot
-#         plot_df['net_margin'] = plot_df['net_margin'].fillna('0')
-#         # Special treatment per subplot
-#         if g == 'gantt_main':  # Group by project then output_type (shortfall -> matched)
-#             plot_df.sort_values(by=['stage', 'project_id', 'output_type_num', 'solo_jv_rank',
-#                                     'loan_sub_type_rank', 'loan_id', 'loan_facility_id'],
-#                                 ascending=[True, True, False, True,
-#                                            True, True, True],
-#                                 inplace=True)
-#             plot_df['y_label'] = plot_df[['output_type', 'y_label']].apply(
-#                 lambda x: x[1] if x[0] == 'matched' else x[1]+' - Project needs (shortfall)', axis=1)
-#             plot_df.reset_index(drop=True, inplace=True)
-#         elif g == 'gantt_equity':
-#             plot_df['output_type'] = 'equity'
-#
-#         # Set marker colors and other visualization attributes
-#         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
-#                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-#                                   plot_df['match_type'].astype(str).replace('nan', '') + \
-#                                   plot_df['committed'].astype(str).replace('nan', '')
-#         plot_df['marker_color'].replace({
-#             'shortfall.*': 'indigo',
-#             'matched-T.*': 'yellow',
-#             'matched-R-normal.*': 'orange',
-#             'matched-R-replacement.*': 'deepskyblue',
-#             'matched-R-reserved.*': 'orange',
-#             'matched-Equity.*': 'hotpink',
-#             'leftover-T.*': 'yellow',
-#             'leftover-R.*-C': 'orange',
-#             'leftover-R.*-U': 'deepskyblue',
-#             'equity-Equity.*': 'hotpink'
-#         }, regex=True, inplace=True)
-#         # Past colors: '#ddd255', '#f29340', 'pink', 'firebrick', 'seagreen', 'mediumslateblue', 'teal'
-#         plot_df['marker_line_width'] = \
-#             plot_df['match_type'].apply(lambda x: 1 if x == 'reserved' else 0)
-#         plot_df['marker_line_color'] = \
-#             plot_df['match_type'].apply(lambda x: 'orange' if x == 'reserved' else '#444')
-#         plot_df['marker_opacity'] = \
-#             plot_df['match_type'].apply(lambda x: 0 if x == 'reserved' else 1)
-#         plot_df['marker_pattern_shape'] = \
-#             plot_df['match_type'].apply(lambda x: '/' if x == 'reserved' else '')
-#         plot_df['marker_pattern_solidity'] = \
-#             plot_df['match_type'].apply(lambda x: 0.1 if x == 'reserved' else 0.3)
-#
-#         # Rows are displayed from the bottom to the top
-#         plot_df = plot_df.iloc[::-1]
-#
-#         fig.add_trace(go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
-#                              y=plot_df['y_label'],
-#                              orientation='h',
-#                              base=plot_df['from_date'],
-#                              marker_color=plot_df['marker_color'],
-#                              # marker_line_width=plot_df['marker_line_width'],
-#                              # marker_line_color=plot_df['marker_line_color'],
-#                              # marker_opacity=plot_df['marker_opacity'],
-#                              marker_pattern_shape=plot_df['marker_pattern_shape'],
-#                              marker_pattern_solidity=plot_df['marker_pattern_solidity'],
-#                              # marker_colorscale=marker_colorscales[g],
-#                              text=plot_df['trace_value_str'],
-#                              customdata=np.stack((plot_df['to_date'], plot_df['net_margin']), axis=-1),
-#                              # customdata=plot_df['to_date'],
-#                              hovertemplate='%{y}<br>'
-#                                            '%{base: %Y-%B-%a %d} to %{customdata[0]: %Y-%B-%a %d}<br>'
-#                                            'Amount in $B: %{text}<br>'
-#                                            'Net margin: %{customdata[1]:.3f}%'),
-#                       row=g_idx+1, col=1)
-#
-#     fig.update_layout(height=plot_height)
-#     fig.update_yaxes(tickfont_size=12)
-#     fig.update_xaxes(type='date',
-#                      ticktext=DATE_TICK_TEXTS,
-#                      tickvals=DATE_TICK_VALUES)
-#     fig.update_layout(coloraxis=dict(colorscale='tempo'), showlegend=False,
-#                       barmode='overlay')
-#     return fig
 
 
 def get_gantt_3(matching_object, stage_to_display, projects_to_display,
@@ -1671,6 +1601,5 @@ def add_dashboard(server):
             return {'display': 'block'}
 
     return server
-
 
 
