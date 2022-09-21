@@ -1,5 +1,8 @@
 # Loan Matching 2.0 - Flask Application
 
+## Usage
+To run the application on Windows, execute `start.bat`.
+
 ## Enhancement procedures
 ### To add new dashboard
 1. Add new dashboard_xx.py to app/dash/

@@ -7,8 +7,8 @@ from plotly.subplots import make_subplots
 from dash import Dash, dcc, html, Input, Output, State, ctx
 
 
-DASHBOARD_ID = 'dashboard_02'
-URL_BASE = '/dashboard_02/'
+DASHBOARD_ID = 'dashboard_01b'
+URL_BASE = '/dashboard_01b/'
 
 
 '''

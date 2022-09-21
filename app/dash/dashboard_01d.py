@@ -5,10 +5,11 @@ import copy
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dash import Dash, dcc, html, Input, Output, State, ctx
-import uuid
+import pickle
+import codecs
 
-DASHBOARD_ID = 'dashboard_03'
-URL_BASE = '/dashboard_03/'
+DASHBOARD_ID = 'dashboard_01d'
+URL_BASE = '/dashboard_01d/'
 
 
 class LoanMatching:
@@ -1422,27 +1423,22 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
 
 def add_dashboard(server):
     """Create Plotly Dash dashboard."""
-    # Load initial Dash config
+
+    '''Initial Matching'''
+    # Initial matching with default config, and extract the required data to be placed in initial Dash layout
+    # Load default config
     with open('./app/dash/dash_config.yaml', 'r') as cf:
         dash_config = yaml.safe_load(cf)
 
-    # Initial matching run with default values
-    matching_object = LoanMatching(dash_config)
+    # Run matching
+    init_matching_object = LoanMatching(dash_config)
 
-    # Initialize Dash UI
-    all_stage_dicts = list(matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
+    # Extract required data to be placed in initial Dash layout
+    all_stage_dicts = list(init_matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
     all_stages = [stage_dict['value'] for stage_dict in all_stage_dicts]
-    all_projects = matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
 
-    # Create Dash app
-    dash_app = Dash(
-        server=server,
-        url_base_pathname=URL_BASE,
-        suppress_callback_exceptions=True,
-        external_stylesheets=['/static/style.css']
-    )
+    all_projects = init_matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
 
-    # Dash app layout - default values
     uc_repl_opts_ = [
         {'label': 'UC evergreen',
          'value': 'input_uc_evergreen'},
@@ -1454,14 +1450,24 @@ def add_dashboard(server):
     uc_repl_default_values_ = [
         [x['value'] for x in uc_repl_opts_][i]
         for i, y in enumerate([
-            matching_object.UC_EVERGREEN,
-            matching_object.UC_FULL_COVER,
-            matching_object.UC_CHECK_SAVING_BY_AREA
+            init_matching_object.UC_EVERGREEN,
+            init_matching_object.UC_FULL_COVER,
+            init_matching_object.UC_CHECK_SAVING_BY_AREA
         ])
         if y
     ]  # ['input_uc_evergreen', 'input_uc_check_saving_by_area']
 
-    # Dash app layout
+    init_matching_object_pkl_str = codecs.encode(pickle.dumps(init_matching_object), "base64").decode()
+
+    '''Create Dash app'''
+    dash_app = Dash(
+        server=server,
+        url_base_pathname=URL_BASE,
+        suppress_callback_exceptions=True,
+        external_stylesheets=['/static/style.css']
+    )
+
+    '''Dash app layout'''
     dash_app.layout = \
         html.Div([
             html.H3('Matching 60% land costs with corporate loans'),
@@ -1472,18 +1478,21 @@ def add_dashboard(server):
                 html.Div([
                     html.H4('Matching parameters'),
                     # Target prepayment date delta (tpp_date_delta_ymd)
-                    html.Label('Target prepayment date delta (year/ month/ day): ', style={'font-weight': 'bold'}),
+                    html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
                     dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
-                              value=matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
+                              value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
+                    html.Label('years '),
                     dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
-                              value=matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
+                              value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
+                    html.Label('months '),
                     dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
-                              value=matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
+                              value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
+                    html.Label('days '),
                     html.Br(),
                     # Equity
                     html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
                     dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
-                              value=matching_object.DASH_CONFIG['equity']['amt_in_billion']),
+                              value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
                     html.Br(),
                     # Uncommitted Revolver options
                     html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
@@ -1535,14 +1544,16 @@ def add_dashboard(server):
             html.Div(dcc.Graph(id='figure-output'), className='card'),
 
             # (5) Store
-            # dcc.Store(id="session", data=dict(uid=str(uuid.uuid4())))
+            dcc.Store(id='current-matching-object', data={'current_matching_object': init_matching_object_pkl_str}),
         ])
 
-    # Callbacks
-    # TODO: Flask is stateful, global variable are shared among session - to be fixed
+    '''Callbacks'''
+    # TODO: Flask is stateful, global variable are shared among session - Store
     @dash_app.callback(
         Output('selected-input-display', 'children'),
         Output('figure-output', 'figure'),
+        Output('current-matching-object', 'data'),
+        Input('current-matching-object', 'data'),
         Input('filter-stage', 'value'),
         Input('filter-projects', 'value'),
         Input('chart-type', 'value'),
@@ -1558,9 +1569,14 @@ def add_dashboard(server):
     )
     def update_plot(*args):
         triggered_id = ctx.triggered_id
-        stage_to_display, projects_to_display, chart_type, bar_height, bar_height_range, \
-        _, tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
-        input_equity_amt, input_uc_options = args
+        current_matching_object_json, \
+            stage_to_display, projects_to_display, chart_type, bar_height, bar_height_range, _, \
+            tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
+            input_equity_amt, input_uc_options = args
+
+        # Load matching_object
+        matching_object_pkl_str = current_matching_object_json['current_matching_object']
+        matching_object = pickle.loads(codecs.decode(matching_object_pkl_str.encode(), "base64"))
 
         # Set default values if None and assign back to matching object
         tpp_date_delta_year = tpp_date_delta_year if tpp_date_delta_year is not None else -1
@@ -1640,7 +1656,10 @@ def add_dashboard(server):
         else:
             pass
 
-        return html.Ol(ms_display), fig
+        # End of callback, encode the final matching object and update to dcc.Store
+        matching_object_pkl_str = codecs.encode(pickle.dumps(matching_object), "base64").decode()
+
+        return html.Ol(ms_display), fig, {'current_matching_object': matching_object_pkl_str}
 
     @dash_app.callback(
         Output('matching-scheme-info-box', 'style'),
@@ -1653,14 +1672,6 @@ def add_dashboard(server):
             return {'display': 'block'}
 
     return server
-
-
-# def init_callbacks(dash_app, matching_object):
-#     """Initialize call backs
-#     Args:
-#     - dash_app: Dash app object
-#     - matching_object: LoanMatching object
-#     """
 
 
 

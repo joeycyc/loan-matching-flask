@@ -42,3 +42,6 @@
 
 ### v22.7.13b
 1. Integrated Dash into Flask, to make it a web application
+
+### v22.9.19b
+1. Deployed multiple Dash apps in Flask
