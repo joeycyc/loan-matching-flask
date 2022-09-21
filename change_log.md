@@ -45,3 +45,7 @@
 
 ### v22.9.19b
 1. Deployed multiple Dash apps in Flask
+
+### v22.9.21a
+1. Applied dcc.Store such that dashboard opened in different tabs won't share matching data.
+
