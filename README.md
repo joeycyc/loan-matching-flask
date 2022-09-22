@@ -3,6 +3,11 @@
 ## Usage
 To run the application on Windows, execute `start.bat`.
 
+## Installation
+1. Clone the project folder
+2. Set up Python virtual environment and install requirements
+3. Place the data files in `./app/dash/data/`
+
 ## Enhancement procedures
 ### To add new dashboard
 1. Add new dashboard_xx.py to app/dash/

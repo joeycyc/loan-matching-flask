@@ -644,34 +644,61 @@ class LoanMatching:
             - revolver_ceiling: Maximum amount of Committed Revolver included in matching (in HK$B)
             - revolver_ceiling_for: Whether the ceiling is set for 'loan_matching' or 'acquisition'
             - revolver_to_stay: Criteria of choose which revolver to stay for loan_matching or acquisition,
-                either it is 'max_cost', 'min_cost', 'max_period', 'min_period', 'max_net_margin' or 'min_net_margin'
+                either it is 'max_cost', 'min_cost', 'max_period', 'min_period', 'max_net_margin', 'min_net_margin',
+                'max_area' or 'min_area'
         Target is to divide Committed Revolver facilities into 2 groups: For loan matching OR For acquisition;
         If revolver_ceiling of $10B is set for loan_matching with revolver_to_stay='max_cost',
         it means only max $10B of Committed Revolver can be used for loan matching,
         and the amount exceeding $10B will be set aside for acquisition;
         the criteria for picking which Committed Revolver to stay for loan matching would be by 'max_cost'
 
-        Criteria of picking which Committed Revolver to stay for loan matching or acquisition:
-            - 'max_cost'/ 'min_cost': Facilities with max/ min total cost (i.e., net_margin x area) will stay
-            - 'max_period',
-            - 'min_period',
-            - 'max_net_margin'
-            - 'min_net_margin'
-        # TODO: max_area and min_area ?
+        Criteria of picking which Committed Revolver facilities to stay for loan matching or acquisition:
+            - 'max_cost'/ 'min_cost': Facilities with high/ low total cost (net_margin x area) will stay
+            - 'max_period'/ 'min_period': Facilities with long/ short period (no. of days) will stay
+            - 'max_net_margin'/ 'min_net_margin': Facilities with high/ low net margin will stay
+            - 'max_area'/ 'min_area': Facilities with large/ small area (period x amount) will stay
         return: void
         """
+        '''Input parameter value validation'''
         if not isinstance(revolver_ceiling, (int, float)):
             revolver_ceiling = 99999.0
         if revolver_ceiling_for not in ['loan matching', 'For acquisition']:
             revolver_ceiling = 'loan matching'
         if revolver_to_stay not in ['max_cost', 'min_cost', 'max_period', 'min_period',
-                                    'max_net_margin' or 'min_net_margin']:
+                                    'max_net_margin', 'min_net_margin', 'max_area', 'min_area']:
             revolver_to_stay = 'max_cost'
+        mm_ = revolver_to_stay[:3]
+        metric_ = revolver_to_stay[4:]
+
+        '''Initialize working data'''
+        # Committed Revolver facilities indexes
+        cr_fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
+                       if (fac['loan_sub_type'] == 'R') and (fac['committed'] == 'C')]
+        # abort if there is no Committed Revolver
+        if len(cr_fac_idxs) == 0:
+            return
+        cr_fac_dict = {k: v for k, v in self.WKING_FACILITIES_DICT.items() if k in cr_fac_idxs}
+        cr_arr = np.stack([v['vector'] for v in cr_fac_dict.values()])
+        # Set the quota vector given with revolver_ceiling, when the quota used up (0) for a day,
+        # no more revolver can stay
+        stay_quota_vector = np.ones((self.MAX_DATE - self.DAY_ZERO).days + 1) * revolver_ceiling
+        # Interim output: stay or leave, {fac_idx: vector}
+        stay_dict = dict()
+        leave_dict = dict()
+
+        '''Do the division: stay or leave'''
+        for k, v in cr_fac_dict.items():
+            pass
 
 
         # 'loan_sub_type': 'R', 'committed': 'C'
         # 'net_margin': 0.74, 'vector': array([0., 0., 0., ..., 0., 0., 0.])
         # In self.MATCHED_ENTRIES, append {'loan_facility_id': fac_idx, 'project_id': 999, 'vector': np.array([...], 'match_type': 'set_aside'}
+
+        # self.MATCHED_ENTRIES.append(best_match_entry)
+        # # Update values in master
+        # self.WKING_FACILITIES_DICT[best_match_fac_idx]['vector'] -= best_overlapping
+        # self.WKING_PROJECTS_DICT[best_match_proj_idx]['vector'] -= best_overlapping
         return
 
     def matching_main_proc(self,
@@ -791,7 +818,7 @@ class LoanMatching:
         elif scheme == 3:
             # === Scheme 3: matching procedure === #
             # Stage 0: Initial
-            # Stage 0a: Revolver ceiling applied, set aside revolver not to be included in matching
+            # Stage 0b: Revolver ceiling applied, set aside revolver not to be included in matching
             # Stage 1: Term Facilities vs. Solo then JV
             # Stage 2: Committed Revolver vs. Solo then JV
             # Stage 2a: Uncommitted Revolver to replace Committed Revolver
@@ -801,12 +828,12 @@ class LoanMatching:
             # == Stage 0: Initial == #
             self.std_solo_then_jv_matching('0', '<Initial>')
 
-            # == Stage 0a: Set aside Committed Revolver due to revolver ceiling == #
+            # == Stage 0b: Set aside Committed Revolver due to revolver ceiling == #
             self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
             # Total shortfall
             ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
             # Output for Stage 2a
-            self.STAGED_OUTPUTS['stage 2a'] = {
+            self.STAGED_OUTPUTS['stage 0b'] = {
                 'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
                 'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
                 'matched': copy.deepcopy(self.MATCHED_ENTRIES),
@@ -842,7 +869,7 @@ class LoanMatching:
                 '_id': 3,
                 'name': 'T-R-E plus UC-RTN replacement and revolver ceiling',
                 'description': 'Stage 0: Initial; '
-                               'Stage 0a: Set aside Committed Revolver due to revolver ceiling'
+                               'Stage 0b: Set aside Committed Revolver due to revolver ceiling'
                                'Stage 1: Term Facilities vs. Solo then JV; '
                                'Stage 2: Committed Revolver vs. Solo then JV; '
                                'Stage 2a: Uncommitted Revolver to replace Committed Revolver; '
@@ -851,7 +878,7 @@ class LoanMatching:
                                      'with revolver ceiling',
                 'stages': {
                     0: {'value': 'stage 0', 'label': 'Stage 0: Initial'},
-                    1: {'value': 'stage 0a', 'label': 'Stage 0a: Set aside Committed RTN'},
+                    1: {'value': 'stage 0b', 'label': 'Stage 0b: Set aside Committed RTN'},
                     2: {'value': 'stage 1', 'label': 'Stage 1: Term'},
                     3: {'value': 'stage 2', 'label': 'Stage 2: Term + Committed RTN'},
                     4: {'value': 'stage 2a',

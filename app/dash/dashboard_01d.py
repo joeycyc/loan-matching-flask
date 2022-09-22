@@ -1,4 +1,6 @@
-"""Dashboard for matching 60% land cost with corporate loan (term & revolver)"""
+"""Dashboard for matching 60% land cost with corporate loan (term & revolver)
+Re-fractored with OOP + applied dcc.Store to store matching result per session.
+"""
 from .utils import *
 import yaml
 import copy
