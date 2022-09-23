@@ -18,7 +18,7 @@ URL_BASE = '/dashboard_01b/'
 (0) Read Config Data and Define Global Variables
 --------------------
 '''
-with open('./app/dash/dash_config.yaml', 'r') as cf:
+with open('./app/dash/dash_config_01.yaml', 'r') as cf:
     DASH_CONFIG = yaml.safe_load(cf)
 
 INPUT_DATA_DIR = DASH_CONFIG['data']['input']['dir']
@@ -1016,7 +1016,7 @@ def get_gantt_2(stage_to_display, projects_to_display, *args, **kwargs):
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             'shortfall.*': 'indigo',
@@ -1157,7 +1157,7 @@ def get_gantt_3(stage_to_display, projects_to_display,
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
@@ -1320,7 +1320,7 @@ def get_gantt_diff_bar_width_3(stage_to_display, projects_to_display,
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',

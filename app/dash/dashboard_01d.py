@@ -1052,7 +1052,7 @@ class LoanMatching:
 #         # Set marker colors and other visualization attributes
 #         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
 #                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-#                                   plot_df['match_type'].astype(str).replace('nan', '') + \
+#                                   plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
 #                                   plot_df['committed'].astype(str).replace('nan', '')
 #         plot_df['marker_color'].replace({
 #             'shortfall.*': 'indigo',
@@ -1191,7 +1191,7 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
@@ -1352,7 +1352,7 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
@@ -1429,7 +1429,7 @@ def add_dashboard(server):
     '''Initial Matching'''
     # Initial matching with default config, and extract the required data to be placed in initial Dash layout
     # Load default config
-    with open('./app/dash/dash_config.yaml', 'r') as cf:
+    with open('./app/dash/dash_config_01.yaml', 'r') as cf:
         dash_config = yaml.safe_load(cf)
 
     # Run matching

@@ -1,3 +1,4 @@
+# Config for dashboard_04
 data:
   input:
     dir: ./app/dash/data/input/
@@ -57,7 +58,7 @@ uc_evergreen: True
 
 matching_scheme:
   # TODO: Select the default matching scheme
-  scheme_id: 3  # TODO: reset to 2
+  scheme_id: 3
   # The following 2 parameters applicable for Scheme 2 and 3 only (UC replacement)
   full_cover: False
   check_saving_by_area: True

@@ -1050,7 +1050,7 @@ class LoanMatching:
 #         # Set marker colors and other visualization attributes
 #         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
 #                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-#                                   plot_df['match_type'].astype(str).replace('nan', '') + \
+#                                   plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
 #                                   plot_df['committed'].astype(str).replace('nan', '')
 #         plot_df['marker_color'].replace({
 #             'shortfall.*': 'indigo',
@@ -1189,7 +1189,7 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
@@ -1350,7 +1350,7 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
         # Set marker colors and other visualization attributes
         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
-                                  plot_df['match_type'].astype(str).replace('nan', '') + \
+                                  plot_df['match_type'].astype(str).replace('nan', '') + '-' + \
                                   plot_df['committed'].astype(str).replace('nan', '')
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
@@ -1424,7 +1424,7 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
 def add_dashboard(server):
     """Create Plotly Dash dashboard."""
     # Load initial Dash config
-    with open('./app/dash/dash_config.yaml', 'r') as cf:
+    with open('./app/dash/dash_config_01.yaml', 'r') as cf:
         dash_config = yaml.safe_load(cf)
 
     # Initial matching run with default values
