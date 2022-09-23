@@ -673,6 +673,9 @@ class LoanMatching:
         mm_ = revolver_to_stay[:3]  # 'max' or 'min'
         metric_ = revolver_to_stay[4:]
 
+        print(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
+        # TODO: Problem with $1B with max_cost for loan_matching
+
         '''Initialize working data'''
         # Committed Revolver facilities indexes
         cr_fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
@@ -769,7 +772,7 @@ class LoanMatching:
             uc_check_saving_by_area = self.UC_CHECK_SAVING_BY_AREA
         if revolver_ceiling is None:
             revolver_ceiling = self.REVOLVER_CEILING
-        if revolver_ceiling is None:
+        if revolver_ceiling_for is None:
             revolver_ceiling_for = self.REVOLVER_CEILING_FOR
         if revolver_to_stay is None:
             revolver_to_stay = self.REVOLVER_TO_STAY
@@ -1944,6 +1947,12 @@ def add_dashboard(server):
         if y
     ]  # ['input_uc_evergreen', 'input_uc_check_saving_by_area']
 
+    ttl_cr_amt = sum([v['facility_amount_inB']
+                      for v in init_matching_object.STAGED_OUTPUTS['stage 0']['fac'].values()
+                      if (v['loan_sub_type'] == 'R') and (v['committed'] == 'C') and
+                      (v['target_prepayment_date_idx'] >= 0)])
+    ttl_cr_amt_str = '%.3f' % ttl_cr_amt
+
     init_matching_object_pkl_str = codecs.encode(pickle.dumps(init_matching_object), "base64").decode()
 
     '''Create Dash app'''
@@ -1969,13 +1978,13 @@ def add_dashboard(server):
                     html.Div([
                         # Target prepayment date delta (tpp_date_delta_ymd)
                         html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
-                        dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
+                        dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
                                   value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
                         html.Label('years ', style={'font-size': '12px'}),
-                        dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
+                        dcc.Input(id='tpp-date-delta-month', type='number', placeholder='Month',
                                   value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
                         html.Label('months ', style={'font-size': '12px'}),
-                        dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
+                        dcc.Input(id='tpp-date-delta-day', type='number', placeholder='Day',
                                   value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
                         html.Label('days ', style={'font-size': '12px'}),
                         html.Br(),
@@ -1983,17 +1992,50 @@ def add_dashboard(server):
                     html.Div([
                         # Equity
                         html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
-                        dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
+                        dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
                                   value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
                         html.Br(),
                     ]),
                     html.Div([
                         # Uncommitted Revolver options
                         html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
-                        dcc.Checklist(id='input_uc_options',
+                        dcc.Checklist(id='input-uc-options',
                                       options=uc_repl_opts_,
                                       value=uc_repl_default_values_,
                                       style={'font-size': '14px'}),
+                    ]),
+                    html.Div([
+                        # Set aside committed revolver for acquisition
+                        html.Label('Set aside committed revolver: ', style={'font-weight': 'bold'}),
+                        html.Label('(total amount is HK$' + ttl_cr_amt_str + 'B)', style={'font-size': '12px'}),
+                        html.Br(),
+                        html.Label('Set aside HK$', style={'font-size': '14px'}),
+                        dcc.Input(id='cr-ceiling', type='number',
+                                  value=init_matching_object.REVOLVER_CEILING, min=0, max=99999, step=1,
+                                  style={'font-size': '14px'}),
+                        html.Label('B revolver with ', style={'font-size': '14px'}),
+                        dcc.Dropdown(id='cr-ceiling-to-stay',
+                                     options=[{'value': 'max_cost', 'label': 'highest cost'},
+                                              {'value': 'min_cost', 'label': 'lowest cost'},
+                                              {'value': 'max_area', 'label': 'largest area'},
+                                              {'value': 'min_area', 'label': 'smallest area'},
+                                              {'value': 'max_amount', 'label': 'highest loan amount'},
+                                              {'value': 'min_amount', 'label': 'lowest loan amount'},
+                                              {'value': 'max_period', 'label': 'longest period'},
+                                              {'value': 'min_period', 'label': 'shortest period'},
+                                              {'value': 'max_net_margin', 'label': 'highest net margin'},
+                                              {'value': 'min_net_margin', 'label': 'lowest net margin'}],
+                                     value=init_matching_object.REVOLVER_TO_STAY,
+                                     clearable=False,
+                                     style={'font-size': '14px'}),
+                        html.Label(' for ', style={'font-size': '14px'}),
+                        dcc.Dropdown(id='cr-ceiling-for',
+                                     options=[{'value': 'loan_matching', 'label': 'loan matching'},
+                                              {'value': 'acquisition', 'label': 'acquisition'}],
+                                     value=init_matching_object.REVOLVER_CEILING_FOR,
+                                     clearable=False,
+                                     style={'font-size': '14px'}),
+                        html.Br(),
                     ]),
                     html.Div([
                         # Button to rerun matching
@@ -2010,15 +2052,24 @@ def add_dashboard(server):
                         html.H4('Interactive visualization'),
                     ]),
                     html.Div([
-                        dcc.Dropdown(options=all_stage_dicts,
+                        html.Label('Stage: ', style={'font-weight': 'bold'}),
+                        dcc.Dropdown(id='filter-stage',
+                                     options=all_stage_dicts,
                                      value=all_stages[0],
-                                     id='filter-stage',
+                                     clearable=False,
                                      style={'font-size': '14px'}),
-                        dcc.Dropdown(options=all_projects,
+                    ]),
+                    html.Div([
+                        html.Label('Projects: ', style={'font-weight': 'bold'}),
+                        dcc.Dropdown(id='filter-projects',
+                                     options=all_projects,
                                      value=all_projects,
                                      multi=True,
-                                     id='filter-projects',
+                                     clearable=False,
                                      style={'font-size': '14px'}),
+                    ]),
+                    html.Div([
+                        html.Label('Chart type: ', style={'font-weight': 'bold'}),
                         dcc.RadioItems(
                             options=[{'label': '1. Simple Gantt chart', 'value': 13},
                                      {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
@@ -2027,15 +2078,17 @@ def add_dashboard(server):
                             id='chart-type',
                             style={'font-size': '14px'},
                         ),
+                    ]),
+                    html.Div([
                         html.Div([
                             html.Div([
-                                html.Label('Bar height: ', style={'font-weight': 'bold'}, className='side-by-side'),
+                                html.Label('Bar height', style={'font-weight': 'bold'}, className='side-by-side'),
                                 dcc.Slider(20, 100, value=30, included=True, marks=None, id='bar-height'),
                             ], className='column'),
                             html.Div([
                                 html.Label('Bar height range ',
                                            style={'font-weight': 'bold'}, className='side-by-side'),
-                                html.Label('(for chart type #2 only): ', style={'font-size': '14px'}),
+                                html.Label('(for chart type #2 only)', style={'font-size': '14px'}),
                                 dcc.RangeSlider(0, 1.5, step=0.05, value=[0.25, 1], marks=None,
                                                 id='bar-height-range'),
                             ], className='column'),
@@ -2072,18 +2125,22 @@ def add_dashboard(server):
         Input('bar-height-range', 'value'),
         Input('btn-rerun-matching', 'n_clicks'),
         # Input('btn-refresh-chart', 'n_clicks'),
-        State('tpp_date_delta_year', 'value'),
-        State('tpp_date_delta_month', 'value'),
-        State('tpp_date_delta_day', 'value'),
-        State('input_equity_amt', 'value'),
-        State('input_uc_options', 'value')
+        State('tpp-date-delta-year', 'value'),
+        State('tpp-date-delta-month', 'value'),
+        State('tpp-date-delta-day', 'value'),
+        State('input-equity-amt', 'value'),
+        State('input-uc-options', 'value'),
+        State('cr-ceiling', 'value'),
+        State('cr-ceiling-to-stay', 'value'),
+        State('cr-ceiling-for', 'value'),
     )
     def update_plot(*args):
         triggered_id = ctx.triggered_id
         current_matching_object_json, \
             stage_to_display, projects_to_display, chart_type, bar_height, bar_height_range, _, \
             tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
-            input_equity_amt, input_uc_options = args
+            input_equity_amt, input_uc_options,\
+            cr_ceiling, cr_ceiling_to_stay, cr_ceiling_for = args
 
         # Load matching_object
         matching_object_pkl_str = current_matching_object_json['current_matching_object']
@@ -2106,6 +2163,15 @@ def add_dashboard(server):
 
         uc_saving_by_area = 'input_uc_check_saving_by_area' in input_uc_options
         matching_object.UC_CHECK_SAVING_BY_AREA = uc_saving_by_area
+
+        cr_ceiling = cr_ceiling if cr_ceiling is not None else 99999.0
+        matching_object.REVOLVER_CEILING = cr_ceiling
+
+        cr_ceiling_for = cr_ceiling_for if cr_ceiling_for is not None else 'loan_matching'
+        matching_object.REVOLVER_CEILING_FOR = cr_ceiling_for
+
+        cr_ceiling_to_stay = cr_ceiling_to_stay if cr_ceiling_to_stay is not None else 'max_cost'
+        matching_object.REVOLVER_TO_STAY = cr_ceiling_to_stay
 
         # If clicked the rerun matching button, reload data and rerun matching and update master data
         if triggered_id == 'btn-rerun-matching':
@@ -2142,8 +2208,26 @@ def add_dashboard(server):
             ms_display_text_uc_rep += 'and saving is calculated by net_margin difference x overlapping area'
         else:
             ms_display_text_uc_rep += 'and saving is calculated by net_margin difference only'
-
         ms_display.append(html.Li(ms_display_text_uc_rep))
+        # li 5
+        ms_display_text_cr_ceiling = 'Set aside '
+        if cr_ceiling == 99999:
+            ms_display_text_cr_ceiling += 'all revolver with '
+        else:
+            ms_display_text_cr_ceiling += ('HK$' + str(cr_ceiling) + 'B revolver with ')
+        ms_display_text_cr_ceiling += {
+            'max_cost': 'highest cost',
+            'min_cost': 'lowest cost',
+            'max_area': 'largest area',
+            'min_area': 'smallest area',
+            'max_amount': 'highest loan amount',
+            'min_amount': 'lowest loan amount',
+            'max_period': 'longest period',
+            'min_period': 'shortest period',
+            'max_net_margin': 'highest net margin',
+            'min_net_margin': 'lowest net margin'
+        }[cr_ceiling_to_stay]
+        ms_display_text_cr_ceiling += (' for '+ cr_ceiling_for.replace('_', ' '))
 
         # Render chart
         # Set default as 13

@@ -1425,21 +1425,21 @@ def add_dashboard(server):
                     html.H4('Matching parameters'),
                     # Target prepayment date delta (tpp_date_delta_ymd)
                     html.Label('Target prepayment date delta (year/ month/ day): ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
+                    dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
                               value=DEFAULT_TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
-                    dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
+                    dcc.Input(id='tpp-date-delta-month', type='number', placeholder='Month',
                               value=DEFAULT_TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
-                    dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
+                    dcc.Input(id='tpp-date-delta-day', type='number', placeholder='Day',
                               value=DEFAULT_TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
                     html.Br(),
                     # Equity
                     html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
+                    dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
                               value=DASH_CONFIG['equity']['amt_in_billion']),
                     html.Br(),
                     # Uncommitted Revolver options
                     html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
-                    dcc.Checklist(id='input_uc_options',
+                    dcc.Checklist(id='input-uc-options',
                                   options=[
                                       {'label': 'UC evergreen',
                                        'value': 'input_uc_evergreen'},
@@ -1526,11 +1526,11 @@ def init_callbacks(dash_app):
         Input('bar-height-range', 'value'),
         Input('btn-rerun-matching', 'n_clicks'),
         # Input('btn-refresh-chart', 'n_clicks'),
-        State('tpp_date_delta_year', 'value'),
-        State('tpp_date_delta_month', 'value'),
-        State('tpp_date_delta_day', 'value'),
-        State('input_equity_amt', 'value'),
-        State('input_uc_options', 'value')
+        State('tpp-date-delta-year', 'value'),
+        State('tpp-date-delta-month', 'value'),
+        State('tpp-date-delta-day', 'value'),
+        State('input-equity-amt', 'value'),
+        State('input-uc-options', 'value')
     )
     def update_plot(*args):
         triggered_id = ctx.triggered_id
