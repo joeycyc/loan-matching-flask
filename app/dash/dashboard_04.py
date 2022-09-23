@@ -75,7 +75,7 @@ class LoanMatching:
         self.MATCHED_ENTRIES = list()
         # Example:
         # [{'loan_facility_id': 545, 'project_id': 19, 'vector': array([0., 0., 0., ..., 0., 0., 0.]),
-        #   'match_type': ('normal' | 'replacement' | 'reserved' | 'set_aside')},
+        #   'match_type': ('normal' | 'replacement' | 'reserved' | 'for_acquisition')},
         #  {}, {}]
 
         # Output data
@@ -644,8 +644,9 @@ class LoanMatching:
             - revolver_ceiling: Maximum amount of Committed Revolver included in matching (in HK$B)
             - revolver_ceiling_for: Whether the ceiling is set for 'loan_matching' or 'acquisition'
             - revolver_to_stay: Criteria of choose which revolver to stay for loan_matching or acquisition,
-                either it is 'max_cost', 'min_cost', 'max_period', 'min_period', 'max_net_margin', 'min_net_margin',
-                'max_area' or 'min_area'
+                either it is 'max_cost', 'min_cost', 'max_area', 'min_area', 'max_amount', 'min_amount',
+                'max_period', 'min_period', 'max_net_margin' or 'min_net_margin',
+
         Target is to divide Committed Revolver facilities into 2 groups: For loan matching OR For acquisition;
         If revolver_ceiling of $10B is set for loan_matching with revolver_to_stay='max_cost',
         it means only max $10B of Committed Revolver can be used for loan matching,
@@ -654,20 +655,22 @@ class LoanMatching:
 
         Criteria of picking which Committed Revolver facilities to stay for loan matching or acquisition:
             - 'max_cost'/ 'min_cost': Facilities with high/ low total cost (net_margin x area) will stay
+            - 'max_area'/ 'min_area': Facilities with large/ small area (period x facility_amount) will stay
+            - 'max_amount'/ 'min_amount': Facilities with high/ low facility_amount with stay
             - 'max_period'/ 'min_period': Facilities with long/ short period (no. of days) will stay
             - 'max_net_margin'/ 'min_net_margin': Facilities with high/ low net margin will stay
-            - 'max_area'/ 'min_area': Facilities with large/ small area (period x amount) will stay
+
         return: void
         """
         '''Input parameter value validation'''
         if not isinstance(revolver_ceiling, (int, float)):
             revolver_ceiling = 99999.0
-        if revolver_ceiling_for not in ['loan matching', 'For acquisition']:
-            revolver_ceiling = 'loan matching'
-        if revolver_to_stay not in ['max_cost', 'min_cost', 'max_period', 'min_period',
-                                    'max_net_margin', 'min_net_margin', 'max_area', 'min_area']:
+        if revolver_ceiling_for not in ['loan_matching', 'acquisition']:
+            revolver_ceiling_for = 'loan_matching'
+        if revolver_to_stay not in ['max_cost', 'min_cost', 'max_area', 'min_area', 'max_amount', 'min_amount',
+                                    'max_period', 'min_period', 'max_net_margin', 'min_net_margin']:
             revolver_to_stay = 'max_cost'
-        mm_ = revolver_to_stay[:3]
+        mm_ = revolver_to_stay[:3]  # 'max' or 'min'
         metric_ = revolver_to_stay[4:]
 
         '''Initialize working data'''
@@ -678,7 +681,7 @@ class LoanMatching:
         if len(cr_fac_idxs) == 0:
             return
         cr_fac_dict = {k: v for k, v in self.WKING_FACILITIES_DICT.items() if k in cr_fac_idxs}
-        cr_arr = np.stack([v['vector'] for v in cr_fac_dict.values()])
+        # cr_arr = np.stack([v['vector'] for v in cr_fac_dict.values()])
         # Set the quota vector given with revolver_ceiling, when the quota used up (0) for a day,
         # no more revolver can stay
         stay_quota_vector = np.ones((self.MAX_DATE - self.DAY_ZERO).days + 1) * revolver_ceiling
@@ -686,19 +689,66 @@ class LoanMatching:
         stay_dict = dict()
         leave_dict = dict()
 
+        '''Sort the facilities by metric'''
+        # Arrange data in DataFrame
+        cr_fac_df = pd.DataFrame([[
+            v['loan_facility_id'], v['facility_amount_inB'], v['available_period_from_idx'],
+            v['target_prepayment_date_idx'], v['net_margin']
+        ] for v in cr_fac_dict.values()])
+        cr_fac_df.columns = ['loan_facility_id', 'amount', 'available_period_from_idx',
+                             'target_prepayment_date_idx', 'net_margin']
+        cr_fac_df['period'] = cr_fac_df[['available_period_from_idx', 'target_prepayment_date_idx']].apply(
+            lambda x: x[1] - max(0, x[0]) + 1, axis=1)
+        cr_fac_df['area'] = cr_fac_df['amount'] * cr_fac_df['period']
+        cr_fac_df['cost'] = cr_fac_df['area'] * cr_fac_df['net_margin']
+        # Sorting
+        asc_ = True if mm_ == 'min' else False
+        cr_fac_df.sort_values(by=metric_, ascending=asc_, ignore_index=True, inplace=True)
+        cr_fac_idxs_sorted = list(cr_fac_df['loan_facility_id'])
+
         '''Do the division: stay or leave'''
-        for k, v in cr_fac_dict.items():
-            pass
+        # Loop cr_fac_idxs_sorted multiple times until exhausting the stay_quota_vector
+        # Input: cr_fac_dict, stay_quota_vector
+        # Output: stay_dict and leave_dict
+        while True:
+            # Initialization
+            no_more_overlapping = True
+            for cr_fac_idx in cr_fac_idxs_sorted:
+                overlapping = np.minimum(cr_fac_dict[cr_fac_idx]['vector'], stay_quota_vector)
+                overlapping_area = sum(overlapping)
+                if overlapping_area > 0:
+                    no_more_overlapping = False
+                    if cr_fac_idx in stay_dict:
+                        stay_dict[cr_fac_idx] += overlapping
+                    else:  # cr_fac_idx is new for stay_dict
+                        stay_dict[cr_fac_idx] = overlapping
+                    cr_fac_dict[cr_fac_idx]['vector'] -= overlapping
+                    stay_quota_vector -= overlapping
+            if no_more_overlapping:  # No more overlapping between Committed Revolvers' vectors and stay_quota_vector
+                # Dump the rest to leave_dict
+                for cr_fac_idx in cr_fac_idxs_sorted:
+                    if sum(cr_fac_dict[cr_fac_idx]['vector']) > 0:
+                        leave_dict[cr_fac_idx] = cr_fac_dict[cr_fac_idx]['vector'].copy()
+                break
 
+        '''Update WKING_FACILITIES_DICT's vector and Append 'for_acquisition' entries to MATCHED_ENTRIES'''
+        if revolver_ceiling_for == 'loan_matching':
+            for fac_idx, vec in stay_dict.items():
+                self.WKING_FACILITIES_DICT[fac_idx]['vector'] = vec.copy()
+            for fac_idx, vec in leave_dict.items():
+                self.MATCHED_ENTRIES.append({'loan_facility_id': fac_idx,
+                                             'project_id': -1,
+                                             'vector': vec.copy(),
+                                             'match_type': 'for_acquisition'})
+        else:  # revolver_ceiling_for == 'acquisition'
+            for fac_idx, vec in leave_dict.items():
+                self.WKING_FACILITIES_DICT[fac_idx]['vector'] = vec.copy()
+            for fac_idx, vec in stay_dict.items():
+                self.MATCHED_ENTRIES.append({'loan_facility_id': fac_idx,
+                                             'project_id': -1,
+                                             'vector': vec.copy(),
+                                             'match_type': 'for_acquisition'})
 
-        # 'loan_sub_type': 'R', 'committed': 'C'
-        # 'net_margin': 0.74, 'vector': array([0., 0., 0., ..., 0., 0., 0.])
-        # In self.MATCHED_ENTRIES, append {'loan_facility_id': fac_idx, 'project_id': 999, 'vector': np.array([...], 'match_type': 'set_aside'}
-
-        # self.MATCHED_ENTRIES.append(best_match_entry)
-        # # Update values in master
-        # self.WKING_FACILITIES_DICT[best_match_fac_idx]['vector'] -= best_overlapping
-        # self.WKING_PROJECTS_DICT[best_match_proj_idx]['vector'] -= best_overlapping
         return
 
     def matching_main_proc(self,
@@ -818,7 +868,7 @@ class LoanMatching:
         elif scheme == 3:
             # === Scheme 3: matching procedure === #
             # Stage 0: Initial
-            # Stage 0b: Revolver ceiling applied, set aside revolver not to be included in matching
+            # Stage 0b: Revolver ceiling applied, set aside revolver (for acquisition) not to be included in matching
             # Stage 1: Term Facilities vs. Solo then JV
             # Stage 2: Committed Revolver vs. Solo then JV
             # Stage 2a: Uncommitted Revolver to replace Committed Revolver
@@ -832,7 +882,7 @@ class LoanMatching:
             self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
             # Total shortfall
             ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 2a
+            # Output for Stage 0b
             self.STAGED_OUTPUTS['stage 0b'] = {
                 'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
                 'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
@@ -863,13 +913,14 @@ class LoanMatching:
             }
 
             # == Stage 3: Match equity == #
+            self.std_solo_then_jv_matching('3', 'Equity')  # TODO: KeyError: 'solo_jv'
 
             # === Scheme 3: matching scheme metadata === #
             self.STAGED_OUTPUTS_METADATA = {
                 '_id': 3,
                 'name': 'T-R-E plus UC-RTN replacement and revolver ceiling',
                 'description': 'Stage 0: Initial; '
-                               'Stage 0b: Set aside Committed Revolver due to revolver ceiling'
+                               'Stage 0b: Set aside Committed Revolver for acquisition'
                                'Stage 1: Term Facilities vs. Solo then JV; '
                                'Stage 2: Committed Revolver vs. Solo then JV; '
                                'Stage 2a: Uncommitted Revolver to replace Committed Revolver; '
@@ -878,7 +929,8 @@ class LoanMatching:
                                      'with revolver ceiling',
                 'stages': {
                     0: {'value': 'stage 0', 'label': 'Stage 0: Initial'},
-                    1: {'value': 'stage 0b', 'label': 'Stage 0b: Set aside Committed RTN'},
+                    1: {'value': 'stage 0b',
+                        'label': 'Stage 0b: Set aside Committed RTN for acquisition'},
                     2: {'value': 'stage 1', 'label': 'Stage 1: Term'},
                     3: {'value': 'stage 2', 'label': 'Stage 2: Term + Committed RTN'},
                     4: {'value': 'stage 2a',
@@ -892,151 +944,307 @@ class LoanMatching:
         '''(2) Tidy up result'''
         self.MASTER_OUTPUT = pd.DataFrame()
         # (2.1) Loop over stages and store to centralized dfs
-        for stage, stage_state in self.STAGED_OUTPUTS.items():
-            # (2.1.1) Matched entries
-            # Convert to dataframe
-            matched_entries_dict = {
-                'loan_facility_id': [],
-                'project_id': [],
-                'match_type': [],
-                'from_date_idx': [],
-                'to_date_idx': [],
-                'matched_amt_inB': [],
-                'trace_value': []
-            }
-            for entry in stage_state['matched']:
-                for f, t, a in vec2rects(entry['vector']):
-                    matched_entries_dict['loan_facility_id'].append(entry['loan_facility_id'])
-                    matched_entries_dict['project_id'].append(entry['project_id'])
-                    matched_entries_dict['match_type'].append(entry['match_type'])
-                    matched_entries_dict['from_date_idx'].append(f)
-                    matched_entries_dict['to_date_idx'].append(t)
-                    matched_entries_dict['matched_amt_inB'].append(a)
-                    matched_entries_dict['trace_value'].append(a)
-            matched_entries_df = pd.DataFrame(matched_entries_dict)
-            # Convert back to date columns
-            matched_entries_df['from_date'] = \
-                matched_entries_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            matched_entries_df['to_date'] = \
-                matched_entries_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            # Add indicator columns
-            matched_entries_df['stage'] = stage
-            matched_entries_df['output_type'] = 'matched'
-            matched_entries_df['output_type_num'] = 1
-            # Augment dataframe
-            matched_entries_df = matched_entries_df.sort_values(['project_id', 'loan_facility_id']).reset_index(
-                drop=True)
-            matched_entries_df = matched_entries_df.merge(self.PROJECTS_DF[self.SELECTED_PROJ_COLUMNS],
-                                                          on='project_id',
-                                                          how='left') \
-                .merge(self.FACILITIES_DF[self.SELECTED_FAC_COLUMNS], on='loan_facility_id', how='left')
-            matched_entries_df['projectXfacility'] = \
-                matched_entries_df['project_name'] + ' | ' + matched_entries_df['facility_name'] + \
-                ' (' + matched_entries_df['match_type'] + ')'
-            matched_entries_df['projectXfacility'] = \
-                matched_entries_df['projectXfacility'].str.replace(' (normal)', '', regex=False)
-            matched_entries_df['y_label'] = matched_entries_df['projectXfacility']
 
-            # (2.1.2) Shortfall
+        def get_master_output_subset_df(stage_: str, stage_state_: dict, output_type: str, output_type_num: int,
+                                        self_obj=self):
+            # TODO: self_obj OK?
+            """A procedure to generate subset of DataFrame in MASTER_OUTPUT
+            Args:
+                - stage_: value in format 'stage xx'
+                - stage_state_: dictionary saving the staged output info
+                - output_type (output_type_num): either 'matched' (1), 'shortfall' (2), 'leftover' (3),
+                 'ttl_shortfall' (4), or 'for_acquisition' (5)
+            """
             # Convert to dataframe
-            shortfalls_dict = {
-                'project_id': [],
-                'from_date_idx': [],
-                'to_date_idx': [],
-                'shortfall_amt_inB': [],
-                'trace_value': []
+            output_dict = {
+                'loan_facility_id': [],     # for output_type_num = 1,    3,    5
+                'project_id': [],           # for output_type_num = 1, 2
+                'match_type': [],           # for output_type_num = 1,          5
+                'from_date_idx': [],        # for output_type_num = 1, 2, 3, 4, 5
+                'to_date_idx': [],          # for output_type_num = 1, 2, 3, 4, 5
+                'matched_amt_inB': [],      # for output_type_num = 1,          5
+                'shortfall_amt_inB': [],    # for output_type_num =    2,    4
+                'leftover_amt_inB': [],     # for output_type_num =       3
+                'trace_value': []           # for output_type_num = 1, 2, 3, 4, 5
             }
-            for k, v in stage_state['proj'].items():
-                for f, t, a in vec2rects(v['vector'],
-                                         preserve_zero=True,
-                                         preserve_zero_st_idx=max(0, v['start_date_idx']),
-                                         preserve_zero_end_idx=v['end_date_idx']):
+            output_dict_keys = list(output_dict.keys())
+            if output_type == 'matched':  # output_type_num = 1
+                for entry_ in stage_state_['matched']:
+                    if entry_['match_type'] not in ['for_acquisition']:  # Exclude those for_acquisition
+                        for ff, tt, aa in vec2rects(entry_['vector']):
+                            for output_dict_key, value in zip(
+                                    output_dict_keys,
+                                    [entry_['loan_facility_id'], entry_['project_id'], entry_['match_type'],
+                                     ff, tt, aa, np.nan, np.nan, aa]):
+                                output_dict[output_dict_key].append(value)
+            elif output_type == 'shortfall':  # output_type_num = 2
+                for kk, vv in stage_state_['proj'].items():
                     # Special for project: Show zero even the amount is filled
-                    shortfalls_dict['project_id'].append(k)
-                    shortfalls_dict['from_date_idx'].append(f)
-                    shortfalls_dict['to_date_idx'].append(t)
-                    shortfalls_dict['shortfall_amt_inB'].append(a)
-                    shortfalls_dict['trace_value'].append(a)
-            shortfalls_df = pd.DataFrame(shortfalls_dict)
+                    for ff, tt, aa in vec2rects(vv['vector'],
+                                                preserve_zero=True,
+                                                preserve_zero_st_idx=max(0, vv['start_date_idx']),
+                                                preserve_zero_end_idx=vv['end_date_idx']):
+                        for output_dict_key, value in zip(
+                                output_dict_keys,
+                                [np.nan, kk, '', ff, tt, np.nan, aa, np.nan, aa]):
+                            output_dict[output_dict_key].append(value)
+            elif output_type == 'leftover':  # output_type_num = 3
+                for kk, vv in stage_state_['fac'].items():
+                    for ff, tt, aa in vec2rects(vv['vector']):
+                        for output_dict_key, value in zip(
+                                output_dict_keys,
+                                [kk, np.nan, '', ff, tt, np.nan, np.nan, aa, aa]):
+                            output_dict[output_dict_key].append(value)
+            elif output_type == 'ttl_shortfall':  # output_type_num = 4
+                pzei_ = len(stage_state_['ttl_shortfall_vec']) - 1
+                for ff, tt, aa in vec2rects(stage_state_['ttl_shortfall_vec'],
+                                            preserve_zero=True,
+                                            preserve_zero_st_idx=0,
+                                            preserve_zero_end_idx=pzei_):
+                    for output_dict_key, value in zip(
+                            output_dict_keys,
+                            [np.nan, np.nan, '', ff, tt, np.nan, aa, np.nan, aa]):
+                        output_dict[output_dict_key].append(value)
+            elif output_type == 'for_acquisition':  # output_type_num = 5
+                for entry_ in stage_state_['matched']:
+                    if entry_['match_type'] == 'for_acquisition':  # Only include those for_acquisition
+                        for ff, tt, aa in vec2rects(entry_['vector']):
+                            for output_dict_key, value in zip(
+                                    output_dict_keys,
+                                    [entry_['loan_facility_id'], np.nan, entry_['match_type'],
+                                     ff, tt, aa, np.nan, np.nan, aa]):
+                                output_dict[output_dict_key].append(value)
+            else:  # Unknown output_type_num!!
+                pass
+            output_df = pd.DataFrame(output_dict)
             # Convert back to date columns
-            shortfalls_df['from_date'] = shortfalls_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            shortfalls_df['to_date'] = shortfalls_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            output_df['from_date'] = output_df['from_date_idx'].apply(lambda x: idx2date(x, self_obj.DAY_ZERO))
+            output_df['to_date'] = output_df['to_date_idx'].apply(lambda x: idx2date(x, self_obj.DAY_ZERO))
             # Add indicator columns
-            shortfalls_df['stage'] = stage
-            shortfalls_df['output_type'] = 'shortfall'
-            shortfalls_df['output_type_num'] = 2
-            # Augment dataframe
-            shortfalls_df = shortfalls_df.sort_values(['project_id']).reset_index(drop=True)
-            shortfalls_df = shortfalls_df.merge(self.PROJECTS_DF[self.SELECTED_PROJ_COLUMNS],
-                                                on='project_id',
-                                                how='left')
-            shortfalls_df['y_label'] = shortfalls_df['project_name']
+            output_df['stage'] = stage_
+            output_df['output_type'] = output_type
+            output_df['output_type_num'] = output_type_num
+            # Augment dataframe - project and facility columns
+            output_df = output_df.sort_values(['project_id', 'loan_facility_id']).reset_index(drop=True)
 
-            # (2.1.3) Leftover
-            # Convert to dataframe
-            leftovers_dict = {
-                'loan_facility_id': [],
-                'from_date_idx': [],
-                'to_date_idx': [],
-                'leftover_amt_inB': [],
-                'trace_value': []
-            }
-            for k, v in stage_state['fac'].items():
-                for f, t, a in vec2rects(v['vector']):
-                    leftovers_dict['loan_facility_id'].append(k)
-                    leftovers_dict['from_date_idx'].append(f)
-                    leftovers_dict['to_date_idx'].append(t)
-                    leftovers_dict['leftover_amt_inB'].append(a)
-                    leftovers_dict['trace_value'].append(a)
-            leftovers_df = pd.DataFrame(leftovers_dict)
-            # Convert back to date columns
-            leftovers_df['from_date'] = leftovers_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            leftovers_df['to_date'] = leftovers_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            # Add indicator columns
-            leftovers_df['stage'] = stage
-            leftovers_df['output_type'] = 'leftover'
-            leftovers_df['output_type_num'] = 3
-            # Augment dataframe
-            leftovers_df = leftovers_df.sort_values(['loan_facility_id']).reset_index(drop=True)
-            leftovers_df = leftovers_df.merge(self.FACILITIES_DF[self.SELECTED_FAC_COLUMNS],
-                                              on='loan_facility_id',
-                                              how='left')
-            leftovers_df['y_label'] = leftovers_df['facility_name']
+            if output_type in ['matched', 'shortfall']:  # for output_type_num = 1, 2 only
+                output_df = output_df.merge(self_obj.PROJECTS_DF[self_obj.SELECTED_PROJ_COLUMNS],
+                                            on='project_id',
+                                            how='left')
 
-            # (2.1.4) Total shortfall
-            # Convert to dataframe
-            ttl_shortfalls_dict = {
-                'from_date_idx': [],
-                'to_date_idx': [],
-                'shortfall_amt_inB': [],
-                'trace_value': []
+            if output_type in ['matched', 'leftover', 'for_acquisition']:  # for output_type_num = 1, 3, 5 only
+                output_df = output_df.merge(self_obj.FACILITIES_DF[self_obj.SELECTED_FAC_COLUMNS],
+                                            on='loan_facility_id',
+                                            how='left')
+
+            # Augment dataframe - y_label
+            if output_type == 'matched':  # for output_type_num = 1 only
+                output_df['projectXfacility'] = output_df['project_name'] + ' | ' + output_df['facility_name'] + \
+                                                ' (' + output_df['match_type'] + ')'
+                output_df['projectXfacility'] = output_df['projectXfacility'].str.replace(' (normal)', '', regex=False)
+
+            y_label_col_mapping = {
+                'matched': 'projectXfacility',
+                'shortfall': 'project_name',
+                'leftover': 'facility_name',
+                'for_acquisition': 'facility_name'
             }
-            pzei_ = len(stage_state['ttl_shortfall_vec']) - 1
-            for f, t, a in vec2rects(stage_state['ttl_shortfall_vec'],
-                                     preserve_zero=True,
-                                     preserve_zero_st_idx=0,
-                                     preserve_zero_end_idx=pzei_):
-                ttl_shortfalls_dict['from_date_idx'].append(f)
-                ttl_shortfalls_dict['to_date_idx'].append(t)
-                ttl_shortfalls_dict['shortfall_amt_inB'].append(a)
-                ttl_shortfalls_dict['trace_value'].append(a)
-            ttl_shortfall_df = pd.DataFrame(ttl_shortfalls_dict)
-            # Convert back to date columns
-            ttl_shortfall_df['from_date'] = \
-                ttl_shortfall_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            ttl_shortfall_df['to_date'] = \
-                ttl_shortfall_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
-            # Add indicator columns
-            ttl_shortfall_df['stage'] = stage
-            ttl_shortfall_df['output_type'] = 'ttl_shortfall'
-            ttl_shortfall_df['output_type_num'] = 4
-            # Augment dataframe
-            ttl_shortfall_df['y_label'] = 'Total Shortfall'
+
+            if output_type in y_label_col_mapping:  # for output_type_num = 1, 2, 3, 5 only
+                output_df['y_label'] = output_df[y_label_col_mapping[output_type]]
+            elif output_type == 'ttl_shortfall':  # for output_type_num = 4 only
+                output_df['y_label'] = 'Total Shortfall'
+
+            return output_df
+
+        for stage, stage_state in self.STAGED_OUTPUTS.items():
+            # (2.1.1 - 2.1.5)
+            matched_entries_df = get_master_output_subset_df(stage, stage_state, 'matched', 1)
+            shortfalls_df = get_master_output_subset_df(stage, stage_state, 'shortfall', 2)
+            leftovers_df = get_master_output_subset_df(stage, stage_state, 'leftover', 3)
+            ttl_shortfall_df = get_master_output_subset_df(stage, stage_state, 'ttl_shortfall', 4)
+            for_acq_df = get_master_output_subset_df(stage, stage_state, 'for_acquisition', 5)
+
+            # # (2.1.1) Matched entries
+            # # Convert to dataframe
+            # matched_entries_dict = {
+            #     'loan_facility_id': [],
+            #     'project_id': [],
+            #     'match_type': [],
+            #     'from_date_idx': [],
+            #     'to_date_idx': [],
+            #     'matched_amt_inB': [],
+            #     'trace_value': []
+            # }
+            # for entry in stage_state['matched']:
+            #     if entry['match_type'] not in ['for_acquisition']:  # Exclude those for_acquisition
+            #         for f, t, a in vec2rects(entry['vector']):
+            #             matched_entries_dict['loan_facility_id'].append(entry['loan_facility_id'])
+            #             matched_entries_dict['project_id'].append(entry['project_id'])
+            #             matched_entries_dict['match_type'].append(entry['match_type'])
+            #             matched_entries_dict['from_date_idx'].append(f)
+            #             matched_entries_dict['to_date_idx'].append(t)
+            #             matched_entries_dict['matched_amt_inB'].append(a)
+            #             matched_entries_dict['trace_value'].append(a)
+            # matched_entries_df = pd.DataFrame(matched_entries_dict)
+            # # Convert back to date columns
+            # matched_entries_df['from_date'] = \
+            #     matched_entries_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # matched_entries_df['to_date'] = \
+            #     matched_entries_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # # Add indicator columns
+            # matched_entries_df['stage'] = stage
+            # matched_entries_df['output_type'] = 'matched'
+            # matched_entries_df['output_type_num'] = 1
+            # # Augment dataframe
+            # matched_entries_df = matched_entries_df.sort_values(['project_id', 'loan_facility_id']).reset_index(
+            #     drop=True)
+            # matched_entries_df = matched_entries_df.merge(self.PROJECTS_DF[self.SELECTED_PROJ_COLUMNS],
+            #                                               on='project_id',
+            #                                               how='left') \
+            #     .merge(self.FACILITIES_DF[self.SELECTED_FAC_COLUMNS], on='loan_facility_id', how='left')
+            # matched_entries_df['projectXfacility'] = \
+            #     matched_entries_df['project_name'] + ' | ' + matched_entries_df['facility_name'] + \
+            #     ' (' + matched_entries_df['match_type'] + ')'
+            # matched_entries_df['projectXfacility'] = \
+            #     matched_entries_df['projectXfacility'].str.replace(' (normal)', '', regex=False)
+            # matched_entries_df['y_label'] = matched_entries_df['projectXfacility']
+            #
+            # # (2.1.2) Shortfall
+            # # Convert to dataframe
+            # shortfalls_dict = {
+            #     'project_id': [],
+            #     'from_date_idx': [],
+            #     'to_date_idx': [],
+            #     'shortfall_amt_inB': [],
+            #     'trace_value': []
+            # }
+            # for k, v in stage_state['proj'].items():
+            #     for f, t, a in vec2rects(v['vector'],
+            #                              preserve_zero=True,
+            #                              preserve_zero_st_idx=max(0, v['start_date_idx']),
+            #                              preserve_zero_end_idx=v['end_date_idx']):
+            #         # Special for project: Show zero even the amount is filled
+            #         shortfalls_dict['project_id'].append(k)
+            #         shortfalls_dict['from_date_idx'].append(f)
+            #         shortfalls_dict['to_date_idx'].append(t)
+            #         shortfalls_dict['shortfall_amt_inB'].append(a)
+            #         shortfalls_dict['trace_value'].append(a)
+            # shortfalls_df = pd.DataFrame(shortfalls_dict)
+            # # Convert back to date columns
+            # shortfalls_df['from_date'] = shortfalls_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # shortfalls_df['to_date'] = shortfalls_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # # Add indicator columns
+            # shortfalls_df['stage'] = stage
+            # shortfalls_df['output_type'] = 'shortfall'
+            # shortfalls_df['output_type_num'] = 2
+            # # Augment dataframe
+            # shortfalls_df = shortfalls_df.sort_values(['project_id']).reset_index(drop=True)
+            # shortfalls_df = shortfalls_df.merge(self.PROJECTS_DF[self.SELECTED_PROJ_COLUMNS],
+            #                                     on='project_id',
+            #                                     how='left')
+            # shortfalls_df['y_label'] = shortfalls_df['project_name']
+            #
+            # # (2.1.3) Leftover
+            # # Convert to dataframe
+            # leftovers_dict = {
+            #     'loan_facility_id': [],
+            #     'from_date_idx': [],
+            #     'to_date_idx': [],
+            #     'leftover_amt_inB': [],
+            #     'trace_value': []
+            # }
+            # for k, v in stage_state['fac'].items():
+            #     for f, t, a in vec2rects(v['vector']):
+            #         leftovers_dict['loan_facility_id'].append(k)
+            #         leftovers_dict['from_date_idx'].append(f)
+            #         leftovers_dict['to_date_idx'].append(t)
+            #         leftovers_dict['leftover_amt_inB'].append(a)
+            #         leftovers_dict['trace_value'].append(a)
+            # leftovers_df = pd.DataFrame(leftovers_dict)
+            # # Convert back to date columns
+            # leftovers_df['from_date'] = leftovers_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # leftovers_df['to_date'] = leftovers_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # # Add indicator columns
+            # leftovers_df['stage'] = stage
+            # leftovers_df['output_type'] = 'leftover'
+            # leftovers_df['output_type_num'] = 3
+            # # Augment dataframe
+            # leftovers_df = leftovers_df.sort_values(['loan_facility_id']).reset_index(drop=True)
+            # leftovers_df = leftovers_df.merge(self.FACILITIES_DF[self.SELECTED_FAC_COLUMNS],
+            #                                   on='loan_facility_id',
+            #                                   how='left')
+            # leftovers_df['y_label'] = leftovers_df['facility_name']
+            #
+            # # (2.1.4) Total shortfall
+            # # Convert to dataframe
+            # ttl_shortfalls_dict = {
+            #     'from_date_idx': [],
+            #     'to_date_idx': [],
+            #     'shortfall_amt_inB': [],
+            #     'trace_value': []
+            # }
+            # pzei_ = len(stage_state['ttl_shortfall_vec']) - 1
+            # for f, t, a in vec2rects(stage_state['ttl_shortfall_vec'],
+            #                          preserve_zero=True,
+            #                          preserve_zero_st_idx=0,
+            #                          preserve_zero_end_idx=pzei_):
+            #     ttl_shortfalls_dict['from_date_idx'].append(f)
+            #     ttl_shortfalls_dict['to_date_idx'].append(t)
+            #     ttl_shortfalls_dict['shortfall_amt_inB'].append(a)
+            #     ttl_shortfalls_dict['trace_value'].append(a)
+            # ttl_shortfall_df = pd.DataFrame(ttl_shortfalls_dict)
+            # # Convert back to date columns
+            # ttl_shortfall_df['from_date'] = \
+            #     ttl_shortfall_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # ttl_shortfall_df['to_date'] = \
+            #     ttl_shortfall_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # # Add indicator columns
+            # ttl_shortfall_df['stage'] = stage
+            # ttl_shortfall_df['output_type'] = 'ttl_shortfall'
+            # ttl_shortfall_df['output_type_num'] = 4
+            # # Augment dataframe
+            # ttl_shortfall_df['y_label'] = 'Total Shortfall'
+            #
+            # # (2.1.5) Set aside for acquisition
+            # # Convert to dataframe
+            # for_acq_dict = {
+            #     'loan_facility_id': [],
+            #     'match_type': [],
+            #     'from_date_idx': [],
+            #     'to_date_idx': [],
+            #     'matched_amt_inB': [],
+            #     'trace_value': []
+            # }
+            # for entry in stage_state['matched']:
+            #     if entry['match_type'] == 'for_acquisition':  # Only include those for_acquisition
+            #         for f, t, a in vec2rects(entry['vector']):
+            #             for_acq_dict['loan_facility_id'].append(entry['loan_facility_id'])
+            #             for_acq_dict['match_type'].append(entry['match_type'])
+            #             for_acq_dict['from_date_idx'].append(f)
+            #             for_acq_dict['to_date_idx'].append(t)
+            #             for_acq_dict['matched_amt_inB'].append(a)
+            #             for_acq_dict['trace_value'].append(a)
+            # for_acq_df = pd.DataFrame(for_acq_dict)
+            # # Convert back to date columns
+            # for_acq_df['from_date'] = for_acq_df['from_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # for_acq_df['to_date'] = for_acq_df['to_date_idx'].apply(lambda x: idx2date(x, self.DAY_ZERO))
+            # # Add indicator columns
+            # for_acq_df['stage'] = stage
+            # for_acq_df['output_type'] = 'for_acquisition'
+            # for_acq_df['output_type_num'] = 5
+            # # Augment dataframe
+            # for_acq_df = for_acq_df.sort_values(['loan_facility_id']).reset_index(drop=True)
+            # for_acq_df = for_acq_df.merge(self.FACILITIES_DF[self.SELECTED_FAC_COLUMNS],
+            #                               on='loan_facility_id',
+            #                               how='left')
+            # for_acq_df['y_label'] = for_acq_df['facility_name']
 
             # (2.1.9) Concat to MASTER_OUTPUT
             self.MASTER_OUTPUT = pd.concat(
-                [self.MASTER_OUTPUT, matched_entries_df, shortfalls_df, leftovers_df, ttl_shortfall_df],
-                ignore_index=True, sort=False)
+                [self.MASTER_OUTPUT, matched_entries_df, shortfalls_df, leftovers_df, ttl_shortfall_df, for_acq_df],
+                ignore_index=True, sort=False
+            )
 
         # (2.2) Sort MASTER_OUTPUT:
         #  stage (asc) -> output_type_num (asc) -> solo_jv (Solo -> JV) -> project_id (asc)
@@ -1065,6 +1273,318 @@ class LoanMatching:
 --------------------
 '''
 
+# [BACKUP]
+# def get_gantt_3(matching_object, stage_to_display, projects_to_display,
+#                 bar_height=30, *args, **kwargs):
+#     """Visualize data in gantt chart - version 3: 4 subplots for shortfall+matched, leftover, total shortfall, equity,
+#      color = amount
+#     Args:
+#     - stage_to_display: str, 'stage (0|1|2|...)'
+#     - projects_to_display: list of strings of project names
+#     - bar_height: int, bar height
+#     """
+#     master_output_vis = matching_object.MASTER_OUTPUT.copy()
+#     master_output_vis['trace_value_str'] = master_output_vis['trace_value'].apply(lambda x: '%.3f' % x)
+#
+#     gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity']
+#     gantts_titles = ['Project needs and matched entries (HK$B)',
+#                      'Loan facilities available (leftover) (HK$B)',
+#                      'Total project needs (HK$B)',
+#                      'Equity (HK$B)']
+#
+#     # Data filters for different gantt charts
+#     conditions_to_display = {'stage': master_output_vis['stage'] == stage_to_display,
+#                              'project': master_output_vis['project_name'].isin(projects_to_display)}
+#     conditions_to_display['gantt_main'] = (master_output_vis['output_type'].isin(['shortfall', 'matched'])) & \
+#         conditions_to_display['stage'] & conditions_to_display['project']
+#     conditions_to_display['gantt_fac'] = (master_output_vis['output_type'] == 'leftover') & \
+#         conditions_to_display['stage'] & (master_output_vis['loan_type'] != 'Equity')
+#     conditions_to_display['gantt_ttl_shortfall'] = (master_output_vis['output_type'] == 'ttl_shortfall') & \
+#         conditions_to_display['stage']
+#     conditions_to_display['gantt_equity'] = (master_output_vis['output_type'] == 'leftover') & \
+#         conditions_to_display['stage'] & (master_output_vis['loan_type'] == 'Equity')
+#
+#     subplot_data = {g: master_output_vis[conditions_to_display[g]] for g in gantts}
+#
+#     # Dynamically define the heights of subplots given with the number of items
+#     # Calculate the number of items, at least 5
+#     subplot_num_items_to_display = {g: max(len(subplot_data[g]['y_label'].unique()), 5) for g in gantts}
+#     # Each bar 30px
+#     subplot_heights = {g: subplot_num_items_to_display[g] * bar_height for g in gantts}
+#     plot_height = sum(subplot_heights.values())
+#     subplot_height_shares = [subplot_heights[g] / plot_height for g in gantts]
+#
+#     ## spacing between 2 subplots
+#     subplot_vertical_spacing = 0.05
+#
+#     # marker_colorscale
+#     # marker_colorscales = {k: v for k, v in zip(gantts, ['Greens', 'Reds', 'Purples'])}
+#
+#     # Manually construct Bar graph_object
+#     fig = make_subplots(rows=len(gantts), cols=1,
+#                         shared_xaxes=True,
+#                         row_heights=subplot_height_shares,
+#                         vertical_spacing=subplot_vertical_spacing,
+#                         subplot_titles=gantts_titles)
+#     for g_idx, g in enumerate(gantts):
+#         plot_df = subplot_data[g].copy()
+#         # Skip to next loop if dataframe is empty
+#         if plot_df.shape[0] == 0:
+#             fig.add_trace(go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
+#                                  y=plot_df['y_label'],
+#                                  orientation='h',
+#                                  base=plot_df['from_date']),
+#                           row=g_idx + 1, col=1)
+#             continue
+#         # General treatment for all subplot
+#         plot_df['net_margin'] = plot_df['net_margin'].fillna('0')
+#         # Special treatment per subplot
+#         if g == 'gantt_main':  # Group by project then output_type (shortfall -> matched)
+#             plot_df.sort_values(by=['stage', 'project_id', 'output_type_num', 'solo_jv_rank',
+#                                     'loan_sub_type_rank', 'loan_id', 'loan_facility_id'],
+#                                 ascending=[True, True, False, True,
+#                                            True, True, True],
+#                                 inplace=True)
+#             plot_df['y_label'] = plot_df[['output_type', 'y_label']].apply(
+#                 lambda x: x[1] if x[0] == 'matched' else x[1]+' - Project needs (shortfall)', axis=1)
+#             plot_df.reset_index(drop=True, inplace=True)
+#         elif g == 'gantt_equity':
+#             plot_df['output_type'] = 'equity'
+#
+#         # Set marker colors and other visualization attributes
+#         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
+#                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
+#                                   plot_df['match_type'].astype(str).replace('nan', '') + \
+#                                   plot_df['committed'].astype(str).replace('nan', '')
+#         plot_df['marker_color'].replace({
+#             '.*shortfall.*': 'indigo',
+#             'matched-T.*': 'yellow',
+#             'matched-R-normal.*': 'orange',
+#             'matched-R-replacement.*': 'deepskyblue',
+#             'matched-R-reserved.*': 'orange',
+#             'matched-Equity.*': 'hotpink',
+#             'leftover-T.*': 'yellow',
+#             'leftover-R.*-C': 'orange',
+#             'leftover-R.*-U': 'deepskyblue',
+#             'equity-Equity.*': 'hotpink'
+#         }, regex=True, inplace=True)
+#         # Past colors: '#ddd255', '#f29340', 'pink', 'firebrick', 'seagreen', 'mediumslateblue', 'teal'
+#         plot_df['marker_line_width'] = \
+#             plot_df['match_type'].apply(lambda x: 1 if x == 'reserved' else 0)
+#         plot_df['marker_line_color'] = \
+#             plot_df['match_type'].apply(lambda x: 'orange' if x == 'reserved' else '#444')
+#         plot_df['marker_opacity'] = \
+#             plot_df['match_type'].apply(lambda x: 0 if x == 'reserved' else 1)
+#         plot_df['marker_pattern_shape'] = \
+#             plot_df['match_type'].apply(lambda x: '/' if x == 'reserved' else '')
+#         plot_df['marker_pattern_solidity'] = \
+#             plot_df['match_type'].apply(lambda x: 0.1 if x == 'reserved' else 0.3)
+#
+#         # Rows are displayed from the bottom to the top
+#         plot_df = plot_df.iloc[::-1]
+#
+#         fig.add_trace(go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
+#                              y=plot_df['y_label'],
+#                              orientation='h',
+#                              base=plot_df['from_date'],
+#                              marker_color=plot_df['marker_color'],
+#                              # marker_line_width=plot_df['marker_line_width'],
+#                              # marker_line_color=plot_df['marker_line_color'],
+#                              # marker_opacity=plot_df['marker_opacity'],
+#                              marker_pattern_shape=plot_df['marker_pattern_shape'],
+#                              marker_pattern_solidity=plot_df['marker_pattern_solidity'],
+#                              # marker_colorscale=marker_colorscales[g],
+#                              text=plot_df['trace_value_str'],
+#                              customdata=np.stack((plot_df['to_date'], plot_df['net_margin']), axis=-1),
+#                              # customdata=plot_df['to_date'],
+#                              hovertemplate='%{y}<br>'
+#                                            '%{base: %Y-%B-%a %d} to %{customdata[0]: %Y-%B-%a %d}<br>'
+#                                            'Amount in $B: %{text}<br>'
+#                                            'Net margin: %{customdata[1]:.3f}%'),
+#                       row=g_idx+1, col=1)
+#
+#     fig.update_layout(height=plot_height)
+#     fig.update_yaxes(tickfont_size=12)
+#     fig.update_xaxes(type='date',
+#                      ticktext=matching_object.DATE_TICK_TEXTS,
+#                      tickvals=matching_object.DATE_TICK_VALUES)
+#     fig.update_layout(coloraxis=dict(colorscale='tempo'), showlegend=False,
+#                       barmode='overlay')
+#     fig.update_layout(xaxis_showticklabels=True, xaxis2_showticklabels=True)
+#     return fig
+#
+#
+# def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_display,
+#                                bar_height=30, trace_height_range=(0.25, 1.0), *args, **kwargs):
+#     """Visualize data in gantt chart - similar to get_gantt_3, but different bar widths according to amount
+#     Args:
+#     - stage_to_display: str, 'stage (0|1|2|...)'
+#     - projects_to_display: list of strings of project names
+#     - bar_height: int, bar height
+#     - trace_height_range: from 0 to 1
+#     """
+#     master_output_vis = matching_object.MASTER_OUTPUT.copy()
+#     master_output_vis['trace_value_str'] = master_output_vis['trace_value'].apply(lambda x: '%.3f' % x)
+#     # Trace width, apply log transformation to trace_value log2(x+4)*10
+#     # master_output_vis['trace_height'] = master_output_vis['trace_value'].apply(lambda x: int(np.log2(x + 4) * 10))
+#
+#     gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity']
+#     gantts_titles = ['Project needs and matched entries (HK$B)',
+#                      'Loan facilities available (leftover) (HK$B)',
+#                      'Total project needs (HK$B)',
+#                      'Equity (HK$B)']
+#
+#     # Data filters for different gantt charts
+#     conditions_to_display = {'stage': master_output_vis['stage'] == stage_to_display,
+#                              'project': master_output_vis['project_name'].isin(projects_to_display)}
+#     conditions_to_display['gantt_main'] = (master_output_vis['output_type'].isin(['shortfall', 'matched'])) & \
+#         conditions_to_display['stage'] & conditions_to_display['project']
+#     conditions_to_display['gantt_fac'] = (master_output_vis['output_type'] == 'leftover') & \
+#         conditions_to_display['stage'] & (master_output_vis['loan_type'] != 'Equity')
+#     conditions_to_display['gantt_ttl_shortfall'] = (master_output_vis['output_type'] == 'ttl_shortfall') & \
+#         conditions_to_display['stage']
+#     conditions_to_display['gantt_equity'] = (master_output_vis['output_type'] == 'leftover') & \
+#         conditions_to_display['stage'] & (master_output_vis['loan_type'] == 'Equity')
+#
+#     subplot_data = {g: master_output_vis[conditions_to_display[g]] for g in gantts}
+#
+#     # Dynamically define the heights of subplots given with the number of items
+#     # Calculate the sum of max amount ($B) per y_label, value is 0 if subplot_data is empty dataframe
+#     subplot_summaxamts = {
+#         **{g: int(np.ceil(subplot_data[g][['trace_value', 'y_label']].groupby('y_label').max('trace_value').sum()))
+#            for g in gantts if subplot_data[g].shape[0] > 0},
+#         **{g: 0 for g in gantts if subplot_data[g].shape[0] == 0}
+#     }
+#     # Calculate the no. of rows in each subplot
+#     subplot_num_rows = {g: len(subplot_data[g]['y_label'].unique()) for g in gantts}
+#     # Set subplot heights
+#     # Each bar height at least 20px
+#     # subplot_heights = {g: max(subplot_num_rows[g] * 20, subplot_summaxamts[g] * 2) for g in gantts}
+#     subplot_heights = dict()
+#     for g in gantts:
+#         if g in ['gantt_main', 'gantt_fac']:
+#             # Each bar height at least 30px
+#             subplot_heights[g] = max(subplot_summaxamts[g] * bar_height / 10, subplot_num_rows[g] * bar_height)
+#         elif g in ['gantt_ttl_shortfall', 'gantt_equity']:
+#             # Bound to [80px, 360px]
+#             subplot_heights[g] = max(min(subplot_summaxamts[g] * bar_height / 10, 360), 80)
+#         else:
+#             subplot_heights[g] = 100
+#     plot_height = sum(subplot_heights.values())
+#     subplot_height_shares = [subplot_heights[g] / plot_height for g in gantts]
+#
+#     ## spacing between 2 subplots
+#     subplot_vertical_spacing = 0.05
+#
+#     # marker_colorscale
+#     # marker_colorscales = {k: v for k, v in zip(gantts, ['Greens', 'Reds', 'Purples'])}
+#
+#     # Manually construct Bar graph_object
+#     fig = make_subplots(rows=len(gantts), cols=1,
+#                         shared_xaxes=True,
+#                         row_heights=subplot_height_shares,
+#                         vertical_spacing=subplot_vertical_spacing,
+#                         subplot_titles=gantts_titles)
+#     for g_idx, g in enumerate(gantts):
+#         plot_df = subplot_data[g].copy()
+#         # Skip to next loop if dataframe is empty
+#         if plot_df.shape[0] == 0:
+#             # TODO: How to show empty subplot?
+#             # fig.add_trace(
+#                 # go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
+#                 #        y=plot_df['y_label'],
+#                 #        orientation='h',
+#                 #        base=plot_df['from_date']),
+#                 # row=g_idx + 1, col=1)
+#             continue
+#         # General treatment for all subplot
+#         plot_df['net_margin'] = plot_df['net_margin'].fillna('0')
+#         # Special treatment per subplot
+#         if g == 'gantt_main':  # Group by project then output_type (shortfall -> matched)
+#             plot_df.sort_values(by=['stage', 'project_id', 'output_type_num', 'solo_jv_rank',
+#                                     'loan_sub_type_rank', 'loan_id', 'loan_facility_id'],
+#                                 ascending=[True, True, False, True,
+#                                            True, True, True],
+#                                 inplace=True)
+#             plot_df['y_label'] = plot_df[['output_type', 'y_label']].apply(
+#                 lambda x: x[1] if x[0] == 'matched' else x[1]+' - Project needs (shortfall)', axis=1)
+#             plot_df.reset_index(drop=True, inplace=True)
+#         elif g == 'gantt_equity':
+#             plot_df['output_type'] = 'equity'
+#
+#         # Set marker colors and other visualization attributes
+#         plot_df['marker_color'] = plot_df['output_type'].astype(str) + '-' + \
+#                                   plot_df['loan_sub_type'].astype(str).replace('nan', '') + '-' + \
+#                                   plot_df['match_type'].astype(str).replace('nan', '') + \
+#                                   plot_df['committed'].astype(str).replace('nan', '')
+#         plot_df['marker_color'].replace({
+#             '.*shortfall.*': 'indigo',
+#             'matched-T.*': 'yellow',
+#             'matched-R-normal.*': 'orange',
+#             'matched-R-replacement.*': 'deepskyblue',
+#             'matched-R-reserved.*': 'orange',
+#             'matched-Equity.*': 'hotpink',
+#             'leftover-T.*': 'yellow',
+#             'leftover-R.*-C': 'orange',
+#             'leftover-R.*-U': 'deepskyblue',
+#             'equity-Equity.*': 'hotpink'
+#         }, regex=True, inplace=True)
+#         # Past colors: '#ddd255', '#f29340', 'pink', 'firebrick', 'seagreen', 'mediumslateblue', 'teal'
+#         plot_df['marker_line_width'] = \
+#             plot_df['match_type'].apply(lambda x: 1 if x == 'reserved' else 0)
+#         plot_df['marker_line_color'] = \
+#             plot_df['match_type'].apply(lambda x: 'orange' if x == 'reserved' else '#444')
+#         plot_df['marker_opacity'] = \
+#             plot_df['match_type'].apply(lambda x: 0 if x == 'reserved' else 1)
+#         plot_df['marker_pattern_shape'] = \
+#             plot_df['match_type'].apply(lambda x: '/' if x == 'reserved' else '')
+#         plot_df['marker_pattern_solidity'] = \
+#             plot_df['match_type'].apply(lambda x: 0.1 if x == 'reserved' else 0.3)
+#
+#         # Set trace_height - relative height from given range
+#         # trace_height_range = (0.25, 1.0)
+#         trace_value_max = max(max(plot_df['trace_value']), 0.001)
+#         # plot_df['trace_height'] = plot_df['trace_value'] / max(plot_df['trace_value'])
+#         # plot_df['trace_height'] = plot_df['trace_height'].apply(lambda x: max(x, 0.5))
+#         plot_df['trace_height'] = plot_df['trace_value'].apply(
+#             lambda x: x / trace_value_max * (trace_height_range[1]-trace_height_range[0]) + trace_height_range[0])
+#
+#         # Rows are displayed from the bottom to the top
+#         plot_df = plot_df.iloc[::-1]
+#
+#         fig.add_trace(go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
+#                              y=plot_df['y_label'],
+#                              width=plot_df['trace_height'],
+#                              orientation='h',
+#                              base=plot_df['from_date'],
+#                              marker_color=plot_df['marker_color'],
+#                              # marker_line_width=plot_df['marker_line_width'],
+#                              # marker_line_color=plot_df['marker_line_color'],
+#                              # marker_opacity=plot_df['marker_opacity'],
+#                              marker_pattern_shape=plot_df['marker_pattern_shape'],
+#                              marker_pattern_solidity=plot_df['marker_pattern_solidity'],
+#                              # marker_colorscale=marker_colorscales[g],
+#                              text=plot_df['trace_value_str'],
+#                              constraintext='none',
+#                              customdata=np.stack((plot_df['to_date'], plot_df['net_margin']), axis=-1),
+#                              # customdata=plot_df['to_date'],
+#                              hovertemplate='%{y}<br>'
+#                                            '%{base: %Y-%B-%a %d} to %{customdata[0]: %Y-%B-%a %d}<br>'
+#                                            'Amount in $B: %{text}<br>'
+#                                            'Net margin: %{customdata[1]:.3f}%'),
+#                       row=g_idx+1, col=1)
+#
+#     fig.update_layout(height=plot_height)
+#     # fig.update_traces(textfont_size=12)
+#     fig.update_yaxes(tickfont_size=12)
+#     fig.update_xaxes(type='date',
+#                      ticktext=matching_object.DATE_TICK_TEXTS,
+#                      tickvals=matching_object.DATE_TICK_VALUES)
+#     fig.update_layout(coloraxis=dict(colorscale='tempo'), showlegend=False,
+#                       barmode='overlay')
+#     fig.update_layout(xaxis_showticklabels=True, xaxis2_showticklabels=True)
+#     return fig
+
 
 def get_gantt_3(matching_object, stage_to_display, projects_to_display,
                 bar_height=30, *args, **kwargs):
@@ -1078,11 +1598,12 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
     master_output_vis = matching_object.MASTER_OUTPUT.copy()
     master_output_vis['trace_value_str'] = master_output_vis['trace_value'].apply(lambda x: '%.3f' % x)
 
-    gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity']
+    gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity', 'gantt_for_acq']
     gantts_titles = ['Project needs and matched entries (HK$B)',
                      'Loan facilities available (leftover) (HK$B)',
                      'Total project needs (HK$B)',
-                     'Equity (HK$B)']
+                     'Equity (HK$B)',
+                     'Revolver set aside for acquisition (HK$B)']
 
     # Data filters for different gantt charts
     conditions_to_display = {'stage': master_output_vis['stage'] == stage_to_display,
@@ -1095,6 +1616,8 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
         conditions_to_display['stage']
     conditions_to_display['gantt_equity'] = (master_output_vis['output_type'] == 'leftover') & \
         conditions_to_display['stage'] & (master_output_vis['loan_type'] == 'Equity')
+    conditions_to_display['gantt_for_acq'] = (master_output_vis['output_type'] == 'for_acquisition') & \
+        conditions_to_display['stage']
 
     subplot_data = {g: master_output_vis[conditions_to_display[g]] for g in gantts}
 
@@ -1158,7 +1681,9 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
             'leftover-T.*': 'yellow',
             'leftover-R.*-C': 'orange',
             'leftover-R.*-U': 'deepskyblue',
-            'equity-Equity.*': 'hotpink'
+            'equity-Equity.*': 'hotpink',
+            'for_acquisition-R-for_acquisition-C': 'orange',
+            'for_acquisition-R-for_acquisition-U': 'deepskyblue',
         }, regex=True, inplace=True)
         # Past colors: '#ddd255', '#f29340', 'pink', 'firebrick', 'seagreen', 'mediumslateblue', 'teal'
         plot_df['marker_line_width'] = \
@@ -1220,11 +1745,12 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
     # Trace width, apply log transformation to trace_value log2(x+4)*10
     # master_output_vis['trace_height'] = master_output_vis['trace_value'].apply(lambda x: int(np.log2(x + 4) * 10))
 
-    gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity']
+    gantts = ['gantt_main', 'gantt_fac', 'gantt_ttl_shortfall', 'gantt_equity', 'gantt_for_acq']
     gantts_titles = ['Project needs and matched entries (HK$B)',
                      'Loan facilities available (leftover) (HK$B)',
                      'Total project needs (HK$B)',
-                     'Equity (HK$B)']
+                     'Equity (HK$B)',
+                     'Revolver set aside for acquisition (HK$B)']
 
     # Data filters for different gantt charts
     conditions_to_display = {'stage': master_output_vis['stage'] == stage_to_display,
@@ -1237,6 +1763,8 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
         conditions_to_display['stage']
     conditions_to_display['gantt_equity'] = (master_output_vis['output_type'] == 'leftover') & \
         conditions_to_display['stage'] & (master_output_vis['loan_type'] == 'Equity')
+    conditions_to_display['gantt_for_acq'] = (master_output_vis['output_type'] == 'for_acquisition') & \
+        conditions_to_display['stage']
 
     subplot_data = {g: master_output_vis[conditions_to_display[g]] for g in gantts}
 
@@ -1319,7 +1847,9 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
             'leftover-T.*': 'yellow',
             'leftover-R.*-C': 'orange',
             'leftover-R.*-U': 'deepskyblue',
-            'equity-Equity.*': 'hotpink'
+            'equity-Equity.*': 'hotpink',
+            'for_acquisition-R-for_acquisition-C': 'orange',
+            'for_acquisition-R-for_acquisition-U': 'deepskyblue',
         }, regex=True, inplace=True)
         # Past colors: '#ddd255', '#f29340', 'pink', 'firebrick', 'seagreen', 'mediumslateblue', 'teal'
         plot_df['marker_line_width'] = \
@@ -1433,59 +1963,84 @@ def add_dashboard(server):
             html.Div([
                 # (1) Left: Matching parameters selection panel
                 html.Div([
-                    html.H4('Matching parameters'),
-                    # Target prepayment date delta (tpp_date_delta_ymd)
-                    html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
-                    html.Label('years '),
-                    dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
-                    html.Label('months '),
-                    dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
-                    html.Label('days '),
-                    html.Br(),
-                    # Equity
-                    html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
-                              value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
-                    html.Br(),
-                    # Uncommitted Revolver options
-                    html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
-                    dcc.Checklist(id='input_uc_options', options=uc_repl_opts_, value=uc_repl_default_values_),
-                    # Button to rerun matching
-                    html.Button('Rerun matching', id='btn-rerun-matching', className='button'),
-                    # Button to refresh figure
-                    # html.Button('Refresh chart', id='btn-refresh-chart', className='button'),
-                    # Button to show/ hide matching scheme
-                    html.Button('Show/ hide matching scheme', id='btn-show-scheme', className='button'),
+                    html.Div([
+                        html.H4('Matching parameters'),
+                    ]),
+                    html.Div([
+                        # Target prepayment date delta (tpp_date_delta_ymd)
+                        html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
+                        dcc.Input(id='tpp_date_delta_year', type='number', placeholder='Year',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
+                        html.Label('years ', style={'font-size': '12px'}),
+                        dcc.Input(id='tpp_date_delta_month', type='number', placeholder='Month',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
+                        html.Label('months ', style={'font-size': '12px'}),
+                        dcc.Input(id='tpp_date_delta_day', type='number', placeholder='Day',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
+                        html.Label('days ', style={'font-size': '12px'}),
+                        html.Br(),
+                    ]),
+                    html.Div([
+                        # Equity
+                        html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
+                        dcc.Input(id='input_equity_amt', type='number', placeholder='Equity',
+                                  value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
+                        html.Br(),
+                    ]),
+                    html.Div([
+                        # Uncommitted Revolver options
+                        html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
+                        dcc.Checklist(id='input_uc_options',
+                                      options=uc_repl_opts_,
+                                      value=uc_repl_default_values_,
+                                      style={'font-size': '14px'}),
+                    ]),
+                    html.Div([
+                        # Button to rerun matching
+                        html.Button('Rerun matching', id='btn-rerun-matching', className='button'),
+                        # Button to refresh figure
+                        # html.Button('Refresh chart', id='btn-refresh-chart', className='button'),
+                        # Button to show/ hide matching scheme
+                        html.Button('Show/ hide matching scheme', id='btn-show-scheme', className='button'),
+                    ]),
                 ], className='column left-column card'),
                 # (2) Right: Interactive visualization panel
                 html.Div([
-                    html.H4('Interactive visualization'),
-                    dcc.Dropdown(options=all_stage_dicts, value=all_stages[0], id='filter-stage',),
-                    dcc.Dropdown(options=all_projects, value=all_projects, multi=True, id='filter-projects',),
-                    dcc.RadioItems(
-                        options=[{'label': '1. Simple Gantt chart', 'value': 13},
-                                 {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
-                        value=13,
-                        inline=True,
-                        id='chart-type',
-                    ),
                     html.Div([
+                        html.H4('Interactive visualization'),
+                    ]),
+                    html.Div([
+                        dcc.Dropdown(options=all_stage_dicts,
+                                     value=all_stages[0],
+                                     id='filter-stage',
+                                     style={'font-size': '14px'}),
+                        dcc.Dropdown(options=all_projects,
+                                     value=all_projects,
+                                     multi=True,
+                                     id='filter-projects',
+                                     style={'font-size': '14px'}),
+                        dcc.RadioItems(
+                            options=[{'label': '1. Simple Gantt chart', 'value': 13},
+                                     {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
+                            value=13,
+                            inline=True,
+                            id='chart-type',
+                            style={'font-size': '14px'},
+                        ),
                         html.Div([
-                            html.Label('Bar height: ', style={'font-weight': 'bold'}, className='side-by-side'),
-                            dcc.Slider(20, 100, value=30, included=True, marks=None, id='bar-height'),
-                        ], className='column'),
-                        html.Div([
-                            html.Label('Bar height range (for chart type #2 only): ',
-                                       style={'font-weight': 'bold'}, className='side-by-side'),
-                            dcc.RangeSlider(0, 1.5, step=0.05, value=[0.25, 1], marks=None,
-                                            id='bar-height-range'),
-                        ], className='column'),
-                    ], className='row'),
-
+                            html.Div([
+                                html.Label('Bar height: ', style={'font-weight': 'bold'}, className='side-by-side'),
+                                dcc.Slider(20, 100, value=30, included=True, marks=None, id='bar-height'),
+                            ], className='column'),
+                            html.Div([
+                                html.Label('Bar height range ',
+                                           style={'font-weight': 'bold'}, className='side-by-side'),
+                                html.Label('(for chart type #2 only): ', style={'font-size': '14px'}),
+                                dcc.RangeSlider(0, 1.5, step=0.05, value=[0.25, 1], marks=None,
+                                                id='bar-height-range'),
+                            ], className='column'),
+                        ], className='row'),
+                    ]),
                 ], className='column right-column card'),
             ], className='row'),
 
