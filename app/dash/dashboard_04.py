@@ -673,9 +673,6 @@ class LoanMatching:
         mm_ = revolver_to_stay[:3]  # 'max' or 'min'
         metric_ = revolver_to_stay[4:]
 
-        print(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
-        # TODO: Problem with $1B with max_cost for loan_matching
-
         '''Initialize working data'''
         # Committed Revolver facilities indexes
         cr_fac_idxs = [fac['loan_facility_id'] for fac in list(self.WKING_FACILITIES_DICT.values())
@@ -736,16 +733,26 @@ class LoanMatching:
 
         '''Update WKING_FACILITIES_DICT's vector and Append 'for_acquisition' entries to MATCHED_ENTRIES'''
         if revolver_ceiling_for == 'loan_matching':
-            for fac_idx, vec in stay_dict.items():
-                self.WKING_FACILITIES_DICT[fac_idx]['vector'] = vec.copy()
+            # stay for loan matching
+            for fac_idx in cr_fac_idxs_sorted:
+                if fac_idx in stay_dict:
+                    self.WKING_FACILITIES_DICT[fac_idx]['vector'] = stay_dict[fac_idx].copy()
+                else:  # not found in stay_dict, put zero vector
+                    self.WKING_FACILITIES_DICT[fac_idx]['vector'] = np.zeros((self.MAX_DATE - self.DAY_ZERO).days + 1)
+            # leave for acquisition
             for fac_idx, vec in leave_dict.items():
                 self.MATCHED_ENTRIES.append({'loan_facility_id': fac_idx,
                                              'project_id': -1,
                                              'vector': vec.copy(),
                                              'match_type': 'for_acquisition'})
         else:  # revolver_ceiling_for == 'acquisition'
-            for fac_idx, vec in leave_dict.items():
-                self.WKING_FACILITIES_DICT[fac_idx]['vector'] = vec.copy()
+            # leave for loan matching
+            for fac_idx in cr_fac_idxs_sorted:
+                if fac_idx in leave_dict:
+                    self.WKING_FACILITIES_DICT[fac_idx]['vector'] = leave_dict[fac_idx].copy()
+                else:  # not found in leave_dict, put zero vector
+                    self.WKING_FACILITIES_DICT[fac_idx]['vector'] = np.zeros((self.MAX_DATE - self.DAY_ZERO).days + 1)
+            # stay for acquisition
             for fac_idx, vec in stay_dict.items():
                 self.MATCHED_ENTRIES.append({'loan_facility_id': fac_idx,
                                              'project_id': -1,
@@ -1259,7 +1266,7 @@ class LoanMatching:
             self.MASTER_OUTPUT['loan_sub_type'].astype(str).replace('nan', '') + \
             self.MASTER_OUTPUT['committed'].astype(str).replace('nan', '')
         self.MASTER_OUTPUT['loan_sub_type_rank'].replace({'T.*': 10, 'RC': 20, 'RU': 21, 'Equity': 30, '': 99},
-                                                    regex=True, inplace=True)
+                                                         regex=True, inplace=True)
         self.MASTER_OUTPUT.sort_values(
             by=[
                 'stage', 'output_type_num', 'solo_jv_rank', 'project_id',
