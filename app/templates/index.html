@@ -5,7 +5,7 @@
 {% endblock %}
 
 {% block body %}
-<h1>Loan Matching 2.0 - v22.9.21a</h1>
+<h1>Loan Matching 2.0 - v22.9.25a</h1>
 <span>
     <h3>
         <a href="/dashboard_01d/" class="dash-link">
@@ -14,7 +14,7 @@
     </h3>
     <ul>
         <li>
-            Matching scheme: Term -> Committed Revolver -> Equity
+            Matching scheme: Term ➜ Committed Revolver ➜ Uncommmited Revolver replacement ➜ Equity
         </li>
         <!--
         <li>
@@ -33,6 +33,16 @@
             </a>
         </li>
         -->
+    </ul>
+    <h3>
+        <a href="/dashboard_04/" class="dash-link">
+            Dashboard for matching 60% land costs with corporate loans (term & revolver) - with Committed Revolver Ceiling
+        </a>
+    </h3>
+    <ul>
+        <li>
+            Matching scheme: Set aside Committed Revolver ➜ Term ➜ Committed Revolver ➜ Uncommmited Revolver replacement ➜ Equity
+        </li>
     </ul>
 </span>
 <br />

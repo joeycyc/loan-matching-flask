@@ -1,4 +1,8 @@
-"""Dashboard for matching 60% land cost with corporate loan (term & revolver)"""
+"""
+Dashboard for matching 60% land cost with corporate loan (term & revolver)
+With Uncommitted Revolver replacement + Committed Revolver ceiling
+Based on dashboard_01d, added Committed Revolver ceiling
+"""
 from .utils import *
 import yaml
 import copy
@@ -1986,21 +1990,27 @@ def add_dashboard(server):
                         # Target prepayment date delta (tpp_date_delta_ymd)
                         html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
                         dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
-                                  value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
-                        html.Label('years ', style={'font-size': '12px'}),
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1,
+                                  style={'width': '2vw'}),
+                        html.Label(' years '),
                         dcc.Input(id='tpp-date-delta-month', type='number', placeholder='Month',
-                                  value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
-                        html.Label('months ', style={'font-size': '12px'}),
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1,
+                                  style={'width': '2vw'}),
+                        html.Label(' months '),
                         dcc.Input(id='tpp-date-delta-day', type='number', placeholder='Day',
-                                  value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
-                        html.Label('days ', style={'font-size': '12px'}),
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1,
+                                  style={'width': '2vw'}),
+                        html.Label(' days '),
                         html.Br(),
                     ]),
                     html.Div([
                         # Equity
-                        html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
+                        html.Label('Equity: ', style={'font-weight': 'bold'}),
+                        html.Label('HK$'),
                         dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
-                                  value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
+                                  value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion'],
+                                  style={'width': '3vw'}),
+                        html.Label('B'),
                         html.Br(),
                     ]),
                     html.Div([
@@ -2009,17 +2019,19 @@ def add_dashboard(server):
                         dcc.Checklist(id='input-uc-options',
                                       options=uc_repl_opts_,
                                       value=uc_repl_default_values_,
-                                      style={'font-size': '14px'}),
+                                      style={'font-size': '14px'},
+                                      labelStyle={'display': 'block'}),
                     ]),
                     html.Div([
                         # Set aside committed revolver for acquisition
                         html.Label('Set aside committed revolver: ', style={'font-weight': 'bold'}),
                         html.Label('(total amount is HK$' + ttl_cr_amt_str + 'B)', style={'font-size': '12px'}),
                         html.Br(),
-                        html.Label('Set aside HK$', style={'font-size': '14px'}),
+
+                        html.Label('Set aside HK$'),
                         dcc.Input(id='cr-ceiling', type='number',
-                                  value=init_matching_object.REVOLVER_CEILING, min=0, max=99999, step=1,
-                                  style={'font-size': '14px'}),
+                                  value=init_matching_object.REVOLVER_CEILING, min=0, max=99999,
+                                  style={'width': '3vw'}),
                         html.Label('B revolver with ', style={'font-size': '14px'}),
                         dcc.Dropdown(id='cr-ceiling-to-stay',
                                      options=[{'value': 'max_cost', 'label': 'highest cost'},
@@ -2034,15 +2046,17 @@ def add_dashboard(server):
                                               {'value': 'min_net_margin', 'label': 'lowest net margin'}],
                                      value=init_matching_object.REVOLVER_TO_STAY,
                                      clearable=False,
-                                     style={'font-size': '14px'}),
+                                     style={'font-size': '14px', 'width': '8vw', 'display': 'inline-block'}),
                         html.Label(' for ', style={'font-size': '14px'}),
                         dcc.Dropdown(id='cr-ceiling-for',
                                      options=[{'value': 'loan_matching', 'label': 'loan matching'},
                                               {'value': 'acquisition', 'label': 'acquisition'}],
                                      value=init_matching_object.REVOLVER_CEILING_FOR,
                                      clearable=False,
-                                     style={'font-size': '14px'}),
+                                     style={'font-size': '14px', 'width': '8vw', 'display': 'inline-block'}),
                         html.Br(),
+
+
                     ]),
                     html.Div([
                         # Button to rerun matching
@@ -2064,7 +2078,7 @@ def add_dashboard(server):
                                      options=all_stage_dicts,
                                      value=all_stages[0],
                                      clearable=False,
-                                     style={'font-size': '14px'}),
+                                     style={'font-size': '14px', 'width': '30vw'}),
                     ]),
                     html.Div([
                         html.Label('Projects: ', style={'font-weight': 'bold'}),
@@ -2078,12 +2092,12 @@ def add_dashboard(server):
                     html.Div([
                         html.Label('Chart type: ', style={'font-weight': 'bold'}),
                         dcc.RadioItems(
+                            id='chart-type',
                             options=[{'label': '1. Simple Gantt chart', 'value': 13},
                                      {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
                             value=13,
                             inline=True,
-                            id='chart-type',
-                            style={'font-size': '14px'},
+                            style={'font-size': '14px', 'display': 'inline-block'},
                         ),
                     ]),
                     html.Div([
@@ -2235,6 +2249,7 @@ def add_dashboard(server):
             'min_net_margin': 'lowest net margin'
         }[cr_ceiling_to_stay]
         ms_display_text_cr_ceiling += (' for '+ cr_ceiling_for.replace('_', ' '))
+        ms_display.append(html.Li(ms_display_text_cr_ceiling))
 
         # Render chart
         # Set default as 13

@@ -1,4 +1,7 @@
-"""Dashboard for matching 60% land cost with corporate loan (term & revolver)"""
+"""
+Dashboard for matching 60% land cost with corporate loan (term & revolver)
+With Uncommitted Revolver replacement
+"""
 from .utils import *
 import yaml
 import copy

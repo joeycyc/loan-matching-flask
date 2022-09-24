@@ -1,4 +1,6 @@
-"""Dashboard for matching 60% land cost with corporate loan (term & revolver)
+"""
+Dashboard for matching 60% land cost with corporate loan (term & revolver)
+With Uncommitted Revolver replacement
 Same as dashboard_01.py
 """
 from .utils import *

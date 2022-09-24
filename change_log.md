@@ -47,5 +47,7 @@
 1. Deployed multiple Dash apps in Flask
 
 ### v22.9.21a
-1. Applied dcc.Store such that dashboard opened in different tabs won't share matching data.
+1. Applied dcc.Store such that dashboard opened in different tabs won't share matching data
 
+### v22.9.25a
+1. Implemented logic for setting aside Committed Revolver for acquisition given by ceiling value

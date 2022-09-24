@@ -1,5 +1,6 @@
-"""Dashboard for matching 60% land cost with corporate loan (term & revolver),
-Re-fractored with OOP
+"""
+Dashboard for matching 60% land cost with corporate loan (term & revolver),
+With Uncommitted Revolver replacement; Re-fractored with OOP
 """
 from .utils import *
 import yaml
