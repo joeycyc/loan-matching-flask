@@ -13,6 +13,7 @@ from dash import Dash, dcc, html, Input, Output, State, ctx
 
 DASHBOARD_ID = 'dashboard_01b'
 URL_BASE = '/dashboard_01b/'
+DASH_CONFIG_FILEPATH = './app/dash/dash_config_01.yaml'
 
 
 '''
@@ -20,7 +21,7 @@ URL_BASE = '/dashboard_01b/'
 (0) Read Config Data and Define Global Variables
 --------------------
 '''
-with open('./app/dash/dash_config_01.yaml', 'r') as cf:
+with open(DASH_CONFIG_FILEPATH, 'r') as cf:
     DASH_CONFIG = yaml.safe_load(cf)
 
 INPUT_DATA_DIR = DASH_CONFIG['data']['input']['dir']

@@ -13,6 +13,7 @@ import codecs
 
 DASHBOARD_ID = 'dashboard_01d'
 URL_BASE = '/dashboard_01d/'
+DASH_CONFIG_FILEPATH = './app/dash/dash_config_01.yaml'
 
 
 class LoanMatching:
@@ -1430,7 +1431,7 @@ def add_dashboard(server):
     '''Initial Matching'''
     # Initial matching with default config, and extract the required data to be placed in initial Dash layout
     # Load default config
-    with open('./app/dash/dash_config_01.yaml', 'r') as cf:
+    with open(DASH_CONFIG_FILEPATH, 'r') as cf:
         dash_config = yaml.safe_load(cf)
 
     # Run matching

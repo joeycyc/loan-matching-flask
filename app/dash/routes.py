@@ -34,3 +34,9 @@ def render_dashboard_01d():
 def render_dashboard_04():
     """Landing page."""
     return render_template('base.html')
+
+
+@dash_bp.route('/dashboard_05')
+def render_dashboard_05():
+    """Landing page."""
+    return render_template('base.html')

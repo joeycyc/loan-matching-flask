@@ -30,6 +30,8 @@ def create_app():
         flask_server = add_dashboard_01d(flask_server)
         from app.dash.dashboard_04 import add_dashboard as add_dashboard_04
         flask_server = add_dashboard_04(flask_server)
+        from app.dash.dashboard_05 import add_dashboard as add_dashboard_05
+        flask_server = add_dashboard_05(flask_server)
 
         return flask_server
 
