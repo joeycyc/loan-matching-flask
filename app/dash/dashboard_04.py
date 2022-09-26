@@ -928,7 +928,7 @@ class LoanMatching:
             }
 
             # == Stage 3: Match equity == #
-            self.std_solo_then_jv_matching('3', 'Equity')  # TODO: KeyError: 'solo_jv'
+            self.std_solo_then_jv_matching('3', 'Equity')
 
             # === Scheme 3: matching scheme metadata === #
             self.STAGED_OUTPUTS_METADATA = {
@@ -962,7 +962,6 @@ class LoanMatching:
 
         def get_master_output_subset_df(stage_: str, stage_state_: dict, output_type: str, output_type_num: int,
                                         self_obj=self):
-            # TODO: self_obj OK?
             """A procedure to generate subset of DataFrame in MASTER_OUTPUT
             Args:
                 - stage_: value in format 'stage xx'
@@ -1504,7 +1503,6 @@ class LoanMatching:
 #         plot_df = subplot_data[g].copy()
 #         # Skip to next loop if dataframe is empty
 #         if plot_df.shape[0] == 0:
-#             # TODO: How to show empty subplot?
 #             # fig.add_trace(
 #                 # go.Bar(x=plot_df[['from_date', 'to_date']].apply(lambda x: dt.date(1970, 1, 1) + (x[1] - x[0]), axis=1),
 #                 #        y=plot_df['y_label'],

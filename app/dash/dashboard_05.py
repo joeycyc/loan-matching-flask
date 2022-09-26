@@ -14,7 +14,7 @@ import codecs
 
 DASHBOARD_ID = 'dashboard_05'
 URL_BASE = '/dashboard_05/'
-DASH_CONFIG_FILEPATH = './app/dash/dash_config_04.yaml'
+DASH_CONFIG_FILEPATH = './app/dash/dash_config_05.yaml'
 
 
 class LoanMatching:
@@ -130,11 +130,15 @@ class LoanMatching:
         self.TPP_DATE_DELTA_YMD = (-1, 0, 0)
         self.UC_EVERGREEN = self.DASH_CONFIG['uc_evergreen']
         # For matching_main_proc()
+        # Uncommitted Revolver Replacement
         self.UC_FULL_COVER = self.DASH_CONFIG['matching_scheme']['full_cover']
         self.UC_CHECK_SAVING_BY_AREA = self.DASH_CONFIG['matching_scheme']['check_saving_by_area']
+        # Committed Revolver Ceiling
         self.REVOLVER_CEILING = self.DASH_CONFIG['matching_scheme']['revolver_ceiling']
         self.REVOLVER_CEILING_FOR = self.DASH_CONFIG['matching_scheme']['revolver_ceiling_for']
         self.REVOLVER_TO_STAY = self.DASH_CONFIG['matching_scheme']['revolver_to_stay']
+        # Manual matching
+        self.MANUAL_MATCHING_RAW_STR = ''
 
         '''(1) Run initial matching'''
         self.load_data()
@@ -928,7 +932,7 @@ class LoanMatching:
             }
 
             # == Stage 3: Match equity == #
-            self.std_solo_then_jv_matching('3', 'Equity')  # TODO: KeyError: 'solo_jv'
+            self.std_solo_then_jv_matching('3', 'Equity')
 
             # === Scheme 3: matching scheme metadata === #
             self.STAGED_OUTPUTS_METADATA = {
@@ -956,13 +960,132 @@ class LoanMatching:
             }
         # ===== End of Matching Scheme #3 ===== #
 
+        # ===== Matching Scheme 4 ===== #
+        elif scheme == 4:
+            # === Scheme 3: matching procedure === #
+            # Stage 0: Initial
+            # Stage 0a: Manual matching
+            # Stage 0b: Revolver ceiling applied, set aside revolver (for acquisition) not to be included in matching
+            # Stage 1: Term Facilities vs. Solo then JV
+            # Stage 2: Committed Revolver vs. Solo then JV
+            # Stage 2a: Uncommitted Revolver to replace Committed Revolver
+            # Stage 3: Equity vs. Solo then JV
+
+            # Output to STAGED_OUTPUTS
+            # == Stage 0: Initial == #
+            self.std_solo_then_jv_matching('0', '<Initial>')
+
+            # == Stage 0a: Manual matching == #
+            # Validate input string
+            all_projects = self.WKING_PROJECTS_DF['project_name'].unique()
+            proj_idx_dict = {k: v for k, v in self.WKING_PROJECTS_DF[[
+                'project_name', 'project_id']].drop_duplicates().to_dict('tight')['data']}  # {project_name: proj_idx}
+            all_fac_idxs = self.WKING_FACILITIES_DF['loan_facility_id'].unique()
+            manual_matching_entries = []  # [(proj_idx, fac_idx)]
+            if isinstance(self.MANUAL_MATCHING_RAW_STR, str):
+                manual_matching_raw_str = self.MANUAL_MATCHING_RAW_STR.rstrip('; ')
+                manual_matching_raw_str = re.sub(';+', ';', manual_matching_raw_str)
+                manual_matching_entry_strs = manual_matching_raw_str.split(';')
+                for manual_matching_entry_str in manual_matching_entry_strs:
+                    proj, fac_idx = None, None
+                    if len(re.findall('\|', manual_matching_entry_str)) == 1:
+                        x1, x2 = manual_matching_entry_str.split('|')
+                        x1 = x1.strip()
+                        x2 = x2.strip()
+                        if re.match(r'^\d+$', x1):
+                            proj, fac_idx = x2, int(x1)
+                        elif re.match(r'^\d+$', x2):
+                            proj, fac_idx = x1, int(x2)
+                        else:
+                            pass
+                    if (proj in all_projects) and (fac_idx in all_fac_idxs):
+                        manual_matching_entries.append((proj_idx_dict[proj], fac_idx))  # append (proj_idx, fac_idx)
+            # Manual matching
+            if len(manual_matching_entries) > 0:
+                for p, f in manual_matching_entries:
+                    self.matching_by_area([f], [p])
+
+            # Total shortfall
+            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+            # Output for Stage 0a
+            self.STAGED_OUTPUTS['stage 0a'] = {
+                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+                'ttl_shortfall_vec': ttl_shortfall_vec
+            }
+
+            # == Stage 0b: Set aside Committed Revolver due to revolver ceiling == #
+            self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
+            # Total shortfall
+            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+            # Output for Stage 0b
+            self.STAGED_OUTPUTS['stage 0b'] = {
+                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+                'ttl_shortfall_vec': ttl_shortfall_vec
+            }
+
+            # == Stage 1 & 2: Term and Committed Revolver == #
+            self.std_solo_then_jv_matching('1', 'T')
+            self.std_solo_then_jv_matching('2', 'R')
+
+            # == Stage 2a: Replace matched Committed Revolver (C-RTN) with Uncommitted Revolver (UC-RTN) == #
+            # For STAGED_OUTPUTS, 'proj' remains the same as that in Stage 2,
+            # update 'fac' for Committed Revolver and
+            # 'matched': MATCHED_ENTRIES (list of dicts), with each dict's format as
+            #  {'loan_facility_id': fac_idx, 'project_id': proj_idx, 'vector': overlapping, 'match_type': match_type}
+            self.replace_matched_entries(full_cover=uc_full_cover,
+                                         check_saving_by_area=uc_check_saving_by_area)
+
+            # Total shortfall
+            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+            # Output for Stage 2a
+            self.STAGED_OUTPUTS['stage 2a'] = {
+                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+                'ttl_shortfall_vec': ttl_shortfall_vec
+            }
+
+            # == Stage 4: Match equity == #
+            self.std_solo_then_jv_matching('3', 'Equity')
+
+            # === Scheme 4: matching scheme metadata === #
+            self.STAGED_OUTPUTS_METADATA = {
+                '_id': 4,
+                'name': 'T-R-E plus manual matching, revolver ceiling, and UC-RTN replacement',
+                'description': 'Stage 0: Initial; '
+                               'Stage 0a: Manual matching; '
+                               'Stage 0b: Set aside Committed Revolver for acquisition'
+                               'Stage 1: Term Facilities vs. Solo then JV; '
+                               'Stage 2: Committed Revolver vs. Solo then JV; '
+                               'Stage 2a: Uncommitted Revolver to replace Committed Revolver; '
+                               'Stage 3: Equity vs. Solo then JV',
+                'short_description': 'Term -> Manual matching -> Set aside Committed Revolver -> '
+                                     'Committed Revolver -> UC replacement -> Equity, Solo -> JV per stage, ',
+                'stages': {
+                    0: {'value': 'stage 0', 'label': 'Stage 0: Initial'},
+                    1: {'value': 'stage 0a', 'label': 'Stage 0a: Manual matching'},
+                    2: {'value': 'stage 0b',
+                        'label': 'Stage 0b: Set aside Committed RTN for acquisition'},
+                    3: {'value': 'stage 1', 'label': 'Stage 1: Term'},
+                    4: {'value': 'stage 2', 'label': 'Stage 2: Term + Committed RTN'},
+                    5: {'value': 'stage 2a',
+                        'label': 'Stage 2a: Term + Committed RTN + Uncommitted RTN Replacement'},
+                    6: {'value': 'stage 3',
+                        'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
+                }
+            }
+        # ===== End of Matching Scheme #3 ===== #
+
         '''(2) Tidy up result'''
         self.MASTER_OUTPUT = pd.DataFrame()
         # (2.1) Loop over stages and store to centralized dfs
 
         def get_master_output_subset_df(stage_: str, stage_state_: dict, output_type: str, output_type_num: int,
                                         self_obj=self):
-            # TODO: self_obj OK?
             """A procedure to generate subset of DataFrame in MASTER_OUTPUT
             Args:
                 - stage_: value in format 'stage xx'
@@ -1202,7 +1325,9 @@ def get_gantt_3(matching_object, stage_to_display, projects_to_display,
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
             'matched-T.*': 'yellow',
-            'matched-R-normal.*': 'orange',
+            # 'matched-R-normal.*': 'orange',
+            'matched-R-normal.*-C': 'orange',
+            'matched-R-normal.*-U': 'deepskyblue',
             'matched-R-replacement.*': 'deepskyblue',
             'matched-R-reserved.*': 'orange',
             'matched-Equity.*': 'hotpink',
@@ -1368,7 +1493,9 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
         plot_df['marker_color'].replace({
             '.*shortfall.*': 'indigo',
             'matched-T.*': 'yellow',
-            'matched-R-normal.*': 'orange',
+            # 'matched-R-normal.*': 'orange',
+            'matched-R-normal.*-C': 'orange',
+            'matched-R-normal.*-U': 'deepskyblue',
             'matched-R-replacement.*': 'deepskyblue',
             'matched-R-reserved.*': 'orange',
             'matched-Equity.*': 'hotpink',
@@ -1500,8 +1627,8 @@ def add_dashboard(server):
                     html.Div([
                         html.H4('Matching parameters'),
                     ]),
+                    # Target prepayment date delta (tpp_date_delta_ymd)
                     html.Div([
-                        # Target prepayment date delta (tpp_date_delta_ymd)
                         html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
                         dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
                                   value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1,
@@ -1517,8 +1644,8 @@ def add_dashboard(server):
                         html.Label(' days '),
                         html.Br(),
                     ]),
+                    # Equity
                     html.Div([
-                        # Equity
                         html.Label('Equity: ', style={'font-weight': 'bold'}),
                         html.Label('HK$'),
                         dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
@@ -1527,16 +1654,17 @@ def add_dashboard(server):
                         html.Label('B'),
                         html.Br(),
                     ]),
+                    # Uncommitted Revolver options
                     html.Div([
-                        # Uncommitted Revolver options
+
                         html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
                         dcc.Checklist(id='input-uc-options',
                                       options=uc_repl_opts_,
                                       value=uc_repl_default_values_,
                                       labelStyle={'display': 'block'}),
                     ]),
+                    # Set aside committed revolver for acquisition
                     html.Div([
-                        # Set aside committed revolver for acquisition
                         html.Label('Set aside committed revolver: ', style={'font-weight': 'bold'}),
                         html.Label('(total amount is HK$' + ttl_cr_amt_str + 'B)', style={'font-size': '12px'}),
                         html.Br(),
@@ -1570,8 +1698,14 @@ def add_dashboard(server):
                                      style={'width': '10vw',
                                             'display': 'inline-block', 'vertical-align': 'middle'}),
                         html.Br(),
-
-
+                    ]),
+                    # Manual matching
+                    html.Div([
+                        html.Label('Manual matching: ', style={'font-weight': 'bold'}),
+                        html.Br(),
+                        dcc.Input(id='manual-matching', type='text',
+                                  placeholder='[project]|[facility_id], semicolon separated, e.g. WCH6|565;LP12|618',
+                                  style={'width': '40vw', 'vertical-align': 'middle'}),
                     ]),
                     html.Div([
                         # Button to rerun matching
@@ -1668,14 +1802,16 @@ def add_dashboard(server):
         State('cr-ceiling', 'value'),
         State('cr-ceiling-to-stay', 'value'),
         State('cr-ceiling-for', 'value'),
+        State('manual-matching', 'value'),
     )
     def update_plot(*args):
         triggered_id = ctx.triggered_id
         current_matching_object_json, \
             stage_to_display, projects_to_display, chart_type, bar_height, bar_height_range, _, \
             tpp_date_delta_year, tpp_date_delta_month, tpp_date_delta_day, \
-            input_equity_amt, input_uc_options,\
-            cr_ceiling, cr_ceiling_to_stay, cr_ceiling_for = args
+            input_equity_amt, input_uc_options, \
+            cr_ceiling, cr_ceiling_to_stay, cr_ceiling_for,\
+            manual_matching_raw_str = args
 
         # Load matching_object
         matching_object_pkl_str = current_matching_object_json['current_matching_object']
@@ -1707,6 +1843,8 @@ def add_dashboard(server):
 
         cr_ceiling_to_stay = cr_ceiling_to_stay if cr_ceiling_to_stay is not None else 'max_cost'
         matching_object.REVOLVER_TO_STAY = cr_ceiling_to_stay
+
+        matching_object.MANUAL_MATCHING_RAW_STR = manual_matching_raw_str
 
         # If clicked the rerun matching button, reload data and rerun matching and update master data
         if triggered_id == 'btn-rerun-matching':

@@ -51,3 +51,6 @@
 
 ### v22.9.25a
 1. Implemented logic for setting aside Committed Revolver for acquisition given by ceiling value
+
+### v22.9.26b
+1. Implemented manual matching
