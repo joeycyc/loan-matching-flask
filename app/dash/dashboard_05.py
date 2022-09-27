@@ -472,6 +472,22 @@ class LoanMatching:
                 self.WKING_PROJECTS_DICT[best_match_proj_idx]['vector'] -= best_overlapping
         return
 
+    def save_to_staged_output(self, stage: str):
+        """Standard procedure to get total shortfall vector and save staged output to STAGED_OUTPUTS
+        Args:
+            - stage: Stage number
+        """
+        # Total shortfall
+        ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
+        # Output for a stage
+        self.STAGED_OUTPUTS['stage ' + str(stage)] = {
+            'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
+            'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
+            'matched': copy.deepcopy(self.MATCHED_ENTRIES),
+            'ttl_shortfall_vec': ttl_shortfall_vec
+        }
+        return
+
     def std_solo_then_jv_matching(self, stage: str, loan_sub_type: str):
         """Standard Solo -> JV matching for a specific stage
         Args:
@@ -490,15 +506,8 @@ class LoanMatching:
                             if fac['loan_sub_type'] == loan_sub_type]
             # Matching by area
             self.matching_by_area(fac_idxs, proj_idxs)
-        # Total shortfall
-        ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-        # Output per stages: Term -> Revolver
-        self.STAGED_OUTPUTS['stage ' + str(stage)] = {
-            'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-            'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-            'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-            'ttl_shortfall_vec': ttl_shortfall_vec
-        }
+        # Calculate total shortfall and output for this stage
+        self.save_to_staged_output(stage)
         return
 
     def replace_matched_entries(self, full_cover: bool = True, check_saving_by_area: bool = True):
@@ -843,19 +852,10 @@ class LoanMatching:
             # update 'fac' for Committed Revolver and
             # 'matched': MATCHED_ENTRIES (list of dicts), with each dict's format as
             #  {'loan_facility_id': fac_idx, 'project_id': proj_idx, 'vector': overlapping, 'match_type': match_type}
-
             self.replace_matched_entries(full_cover=uc_full_cover,
                                          check_saving_by_area=uc_check_saving_by_area)
-
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 2a
-            self.STAGED_OUTPUTS['stage 2a'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('2a')
 
             # == Stage 3: Match equity == #
             self.std_solo_then_jv_matching('3', 'Equity')
@@ -899,15 +899,8 @@ class LoanMatching:
 
             # == Stage 0b: Set aside Committed Revolver due to revolver ceiling == #
             self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 0b
-            self.STAGED_OUTPUTS['stage 0b'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('0b')
 
             # == Stage 1 & 2: Term and Committed Revolver == #
             self.std_solo_then_jv_matching('1', 'T')
@@ -920,16 +913,8 @@ class LoanMatching:
             #  {'loan_facility_id': fac_idx, 'project_id': proj_idx, 'vector': overlapping, 'match_type': match_type}
             self.replace_matched_entries(full_cover=uc_full_cover,
                                          check_saving_by_area=uc_check_saving_by_area)
-
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 2a
-            self.STAGED_OUTPUTS['stage 2a'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('2a')
 
             # == Stage 3: Match equity == #
             self.std_solo_then_jv_matching('3', 'Equity')
@@ -1005,27 +990,13 @@ class LoanMatching:
                 for p, f in manual_matching_entries:
                     self.matching_by_area([f], [p])
 
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 0a
-            self.STAGED_OUTPUTS['stage 0a'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('0a')
 
             # == Stage 0b: Set aside Committed Revolver due to revolver ceiling == #
             self.set_aside_revolver(revolver_ceiling, revolver_ceiling_for, revolver_to_stay)
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 0b
-            self.STAGED_OUTPUTS['stage 0b'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('0b')
 
             # == Stage 1 & 2: Term and Committed Revolver == #
             self.std_solo_then_jv_matching('1', 'T')
@@ -1038,16 +1009,8 @@ class LoanMatching:
             #  {'loan_facility_id': fac_idx, 'project_id': proj_idx, 'vector': overlapping, 'match_type': match_type}
             self.replace_matched_entries(full_cover=uc_full_cover,
                                          check_saving_by_area=uc_check_saving_by_area)
-
-            # Total shortfall
-            ttl_shortfall_vec = np.sum(np.stack([v['vector'] for v in self.WKING_PROJECTS_DICT.values()]), axis=0)
-            # Output for Stage 2a
-            self.STAGED_OUTPUTS['stage 2a'] = {
-                'fac': copy.deepcopy(self.WKING_FACILITIES_DICT),
-                'proj': copy.deepcopy(self.WKING_PROJECTS_DICT),
-                'matched': copy.deepcopy(self.MATCHED_ENTRIES),
-                'ttl_shortfall_vec': ttl_shortfall_vec
-            }
+            # Calculate total shortfall and output for this stage
+            self.save_to_staged_output('2a')
 
             # == Stage 4: Match equity == #
             self.std_solo_then_jv_matching('3', 'Equity')
