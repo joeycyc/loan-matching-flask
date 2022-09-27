@@ -713,12 +713,33 @@ class LoanMatching:
             v['loan_facility_id'], v['facility_amount_inB'], v['available_period_from_idx'],
             v['target_prepayment_date_idx'], v['net_margin']
         ] for v in cr_fac_dict.values()])
-        cr_fac_df.columns = ['loan_facility_id', 'amount', 'available_period_from_idx',
+        cr_fac_df.columns = ['loan_facility_id', 'facility_amount_inB', 'available_period_from_idx',
                              'target_prepayment_date_idx', 'net_margin']
-        cr_fac_df['period'] = cr_fac_df[['available_period_from_idx', 'target_prepayment_date_idx']].apply(
-            lambda x: x[1] - max(0, x[0]) + 1, axis=1)
-        cr_fac_df['area'] = cr_fac_df['amount'] * cr_fac_df['period']
-        cr_fac_df['cost'] = cr_fac_df['area'] * cr_fac_df['net_margin']
+        loan_facility_id_list = []
+        amount_list = []
+        period_list = []
+        area_list = []
+        cost_list = []
+        for k, v in cr_fac_dict.items():
+            loan_facility_id_list.append(k)
+            amount_list.append(max(v['vector']))  # Max. loan facility amount as the amount
+            period_list.append(np.count_nonzero(v['vector']))  # No. of days with non-zero amount
+            area_list.append(sum(v['vector']))
+            cost_list.append(sum(v['vector']) * v['net_margin'])
+        cr_fac_df2 = pd.DataFrame({
+            'loan_facility_id': loan_facility_id_list,
+            'amount': amount_list,
+            'period': period_list,
+            'area': area_list,
+            'cost': cost_list
+        })
+        cr_fac_df = cr_fac_df.merge(cr_fac_df2, how='left', on='loan_facility_id')
+        # cr_fac_df.columns = ['loan_facility_id', 'amount', 'available_period_from_idx',
+        #                      'target_prepayment_date_idx', 'net_margin']
+        # cr_fac_df['period'] = cr_fac_df[['available_period_from_idx', 'target_prepayment_date_idx']].apply(
+        #     lambda x: x[1] - max(0, x[0]) + 1, axis=1)
+        # cr_fac_df['area'] = cr_fac_df['amount'] * cr_fac_df['period']
+        # cr_fac_df['cost'] = cr_fac_df['area'] * cr_fac_df['net_margin']
         # Sorting
         asc_ = True if mm_ == 'min' else False
         cr_fac_df.sort_values(by=metric_, ascending=asc_, ignore_index=True, inplace=True)
