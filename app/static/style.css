@@ -64,14 +64,14 @@ ol {
 
 .left-column {
   padding: 8px;
-  background-color: rgba(173, 255, 255, 0.3);  // lightblue
+  background-color: rgba(173, 255, 255, 0.25);  // lightblue
 //  background-color: lightgrey;
 //  opacity: 0.5;
 }
 
 .right-column {
   padding: 8px;
-  background-color: rgba(238, 232, 170, 0.3);  // palegoldenrod
+  background-color: rgba(238, 232, 170, 0.25);  // palegoldenrod
 //  opacity: 0.5;
 }
 

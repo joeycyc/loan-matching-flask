@@ -1654,14 +1654,13 @@ def add_dashboard(server):
                         html.Label('B'),
                         html.Br(),
                     ]),
-                    # Uncommitted Revolver options
+                    # Manual matching
                     html.Div([
-
-                        html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
-                        dcc.Checklist(id='input-uc-options',
-                                      options=uc_repl_opts_,
-                                      value=uc_repl_default_values_,
-                                      labelStyle={'display': 'block'}),
+                        html.Label('Manual matching: ', style={'font-weight': 'bold'}),
+                        html.Br(),
+                        dcc.Input(id='manual-matching', type='text',
+                                  placeholder='[project]|[facility_id], semicolon separated, e.g. WCH6|565;LP12|618',
+                                  style={'width': '40vw', 'vertical-align': 'middle'}),
                     ]),
                     # Set aside committed revolver for acquisition
                     html.Div([
@@ -1699,14 +1698,16 @@ def add_dashboard(server):
                                             'display': 'inline-block', 'vertical-align': 'middle'}),
                         html.Br(),
                     ]),
-                    # Manual matching
+                    # Uncommitted Revolver options
                     html.Div([
-                        html.Label('Manual matching: ', style={'font-weight': 'bold'}),
-                        html.Br(),
-                        dcc.Input(id='manual-matching', type='text',
-                                  placeholder='[project]|[facility_id], semicolon separated, e.g. WCH6|565;LP12|618',
-                                  style={'width': '40vw', 'vertical-align': 'middle'}),
+
+                        html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
+                        dcc.Checklist(id='input-uc-options',
+                                      options=uc_repl_opts_,
+                                      value=uc_repl_default_values_,
+                                      labelStyle={'display': 'block'}),
                     ]),
+                    # Buttons
                     html.Div([
                         # Button to rerun matching
                         html.Button('Rerun matching', id='btn-rerun-matching', className='button'),
