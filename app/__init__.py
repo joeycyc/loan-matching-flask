@@ -33,6 +33,9 @@ def create_app():
         from app.dash.dashboard_05 import add_dashboard as add_dashboard_05
         flask_server = add_dashboard_05(flask_server)
 
+        from app.dash.upload_file import add_dash_app as add_dash_upload_file
+        flask_server = add_dash_upload_file(flask_server)
+
         return flask_server
 
 

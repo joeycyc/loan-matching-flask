@@ -1,4 +1,4 @@
-# Config for dashboard_04
+# Config for dashboard_05
 data:
   input:
     dir: ./app/dash/data/input/

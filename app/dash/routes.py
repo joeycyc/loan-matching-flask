@@ -40,3 +40,9 @@ def render_dashboard_04():
 def render_dashboard_05():
     """Landing page."""
     return render_template('base.html')
+
+
+@dash_bp.route('/upload_file')
+def render_upload_csv():
+    """Landing page."""
+    return render_template('base.html')
