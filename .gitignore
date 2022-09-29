@@ -2,7 +2,9 @@
 !/.gitignore
 app/dash/data/input/*
 app/dash/data/output/*
+app/dash/data/input/backup/*
 !app/dash/data/input/note.txt
 !app/dash/data/output/note.txt
+!app/dash/data/input/backup/
 venv
 __pycache__/
