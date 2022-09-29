@@ -6,5 +6,6 @@ app/dash/data/input/backup/*
 !app/dash/data/input/note.txt
 !app/dash/data/output/note.txt
 !app/dash/data/input/backup/
+!app/dash/data/input/backup/note.txt
 venv
 __pycache__/
