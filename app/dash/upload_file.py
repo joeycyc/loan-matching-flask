@@ -182,9 +182,17 @@ def add_dash_app(server):
                 data_warning_str = 'WARNING: \n' + '\n'.join(clean_value_warning_strs)
 
             # 3. Pre-process and upload file
-            dt_to_date_fields = ['start_date', 'end_date']
-            for field in dt_to_date_fields:
-                project_df[field] = project_df[field].dt.date
+            for field in ['start_date', 'end_date']:
+                try:
+                    project_df[field] = project_df[field].dt.date
+                except Exception as e:
+                    print(e)
+                    try:
+                        project_df[field] = project_df[field].apply(
+                            lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+                    except Exception as e:
+                        print(e)
+                        data_warning_str += f'\nTable: "project" - Unknown date format in column "{field}"'
             with pd.ExcelWriter(INPUT_DATA_DIR + PROJECT_DATA_FILENAME) as writer:
                 project_df.to_excel(writer, sheet_name='projects', index=False, freeze_panes=(1, 0))
 
@@ -466,10 +474,23 @@ def add_dash_app(server):
                 data_warning_str = 'WARNING: \n' + '\n'.join(warning_strs)
 
             # 3. Pre-process and upload file
-            for field in ['facility_date', 'expiry_date']:
-                dfs['loan_df'][field] = dfs['loan_df'][field].dt.date
-            for field in ['available_period_from', 'available_period_to']:
-                dfs['facility_df'][field] = dfs['facility_df'][field].dt.date
+            date_fields_dict = {
+                'loan_df': ['facility_date', 'expiry_date'],
+                'facility_df': ['available_period_from', 'available_period_to']
+            }
+            for df_name, fields in date_fields_dict.items():
+                tbl_name = df_name.replace('_df', '')
+                for field in fields:
+                    try:
+                        dfs[df_name][field] = dfs[df_name][field].dt.date
+                    except Exception as e:
+                        print(e)
+                        try:
+                            dfs[df_name][field] = dfs[df_name][field].apply(
+                                lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+                        except Exception as e:
+                            print(e)
+                            data_warning_str += f'\nTable: "{tbl_name}" - Unknown date format in column "{field}"'
 
             with pd.ExcelWriter(INPUT_DATA_DIR + BTS_DATA_FILENAME) as writer:
                 for df_name, ws_name in zip(df_names, ws_names):
