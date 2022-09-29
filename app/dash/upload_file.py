@@ -15,6 +15,8 @@ INPUT_DATA_DIR = './app/dash/data/input/'
 BACKUP_DATA_DIR = './app/dash/data/input/backup/'
 PROJECT_DATA_FILENAME = 'project_data.xlsx'
 BTS_DATA_FILENAME = 'bts_data.xlsx'
+PROJECT_DATA_TEMPLATE_FILENAME = 'project_data_template.xlsx'
+BTS_DATA_TEMPLATE_FILENAME = 'bts_data_template.xlsx'
 
 
 def add_dash_app(server):
@@ -33,6 +35,16 @@ def add_dash_app(server):
         html.Label('Upload loan data file(s)', style={'font-weight': 'bold'}),
         html.Br(),
         html.Label('Acceptable file formats: Excel with worksheets "projects", CSV'),
+        html.Div([
+            html.Div([
+                html.Button("Download latest data", id="btn-dl-latest-data-project"),
+                dcc.Download(id="dl-latest-data-project")
+            ], style={'display': 'inline-block'}),
+            html.Div([
+                html.Button("Download template", id="btn-dl-template-project"),
+                dcc.Download(id="dl-template-project")
+            ], style={'display': 'inline-block'}),
+        ]),
         dcc.Upload(
             id='upload-excel-project',
             children=html.Div([
@@ -63,6 +75,16 @@ def add_dash_app(server):
                     '"lender", "loan", "loan_facility"'),
             html.Li('1 Excel file with worksheet names (must be exactly) "tbl_company_grp", "tbl_company", '
                     '"tbl_lender", "tbl_loan", and "tbl_loan_facility"'),
+        ]),
+        html.Div([
+            html.Div([
+                html.Button("Download latest data", id="btn-dl-latest-data-loan"),
+                dcc.Download(id="dl-latest-data-loan")
+            ], style={'display': 'inline-block'}),
+            html.Div([
+                html.Button("Download template", id="btn-dl-template-loan"),
+                dcc.Download(id="dl-template-loan")
+            ], style={'display': 'inline-block'}),
         ]),
         dcc.Upload(
             id='upload-excel-loan',
@@ -541,6 +563,40 @@ def add_dash_app(server):
                     dash_tables['company_grp'],
                 ]),
             ])
+
+    # TODO: Add error message if file not found
+
+    @dash_app.callback(
+        Output("dl-latest-data-project", "data"),
+        Input("btn-dl-latest-data-project", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def dl_latest_project_data(n_clicks):
+        return dcc.send_file(INPUT_DATA_DIR + PROJECT_DATA_FILENAME)
+
+    @dash_app.callback(
+        Output("dl-template-project", "data"),
+        Input("btn-dl-template-project", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def dl_project_data_template(n_clicks):
+        return dcc.send_file(INPUT_DATA_DIR + PROJECT_DATA_TEMPLATE_FILENAME)
+
+    @dash_app.callback(
+        Output("dl-latest-data-loan", "data"),
+        Input("btn-dl-latest-data-loan", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def dl_latest_loan_data(n_clicks):
+        return dcc.send_file(INPUT_DATA_DIR + BTS_DATA_FILENAME)
+
+    @dash_app.callback(
+        Output("dl-template-loan", "data"),
+        Input("btn-dl-template-loan", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def dl_loan_data_template(n_clicks):
+        return dcc.send_file(INPUT_DATA_DIR + BTS_DATA_TEMPLATE_FILENAME)
 
     return server
 

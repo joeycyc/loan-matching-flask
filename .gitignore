@@ -4,6 +4,7 @@ app/dash/data/input/*
 app/dash/data/output/*
 app/dash/data/input/backup/*
 !app/dash/data/input/note.txt
+!app/dash/data/input/*_template.xlsx
 !app/dash/data/output/note.txt
 !app/dash/data/input/backup/
 !app/dash/data/input/backup/note.txt
