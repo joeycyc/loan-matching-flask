@@ -52,7 +52,6 @@ def add_dash_app(server):
             # Not allow multiple files to be uploaded
             multiple=False
         ),
-        html.Div(id='data-uploaded-project'),
         html.Hr(),  # horizontal line
 
         # Loan
@@ -84,6 +83,11 @@ def add_dash_app(server):
             # Allow multiple files to be uploaded
             multiple=True
         ),
+        html.Hr(),  # horizontal line
+
+        # Data preview
+        html.Label('Data preview', style={'font-weight': 'bold'}),
+        html.Div(id='data-uploaded-project'),
         html.Div(id='data-uploaded-loan'),
     ])
 

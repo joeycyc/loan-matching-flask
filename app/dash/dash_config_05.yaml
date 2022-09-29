@@ -8,32 +8,34 @@ data:
         description: Manually compiled data
         excels:
           1:
-            name: manual_compiled_project_data.xlsx
+            # name: manual_compiled_project_data.xlsx
+            name: project_data.xlsx
             worksheets:
               - projects
     loan_data_template:
       selected: template_l2
-      template_l1:
-        description: Two Excel files from BTS
-        excels:
-          1:
-            name: BTS_master_tables_20220606.xlsx
-            worksheets:
-              - tbl_company_grp
-              - tbl_company
-              - tbl_lender
-          2:
-            # name: BTS_loan_profile_20220606.xlsx
-            name: BTS_loan_profile_20220606-testingdata.xlsx
-            worksheets:
-              - tbl_loan
-              - tbl_facility
+#      template_l1:
+#        description: Two Excel files from BTS
+#        excels:
+#          1:
+#            name: BTS_master_tables_20220606.xlsx
+#            worksheets:
+#              - tbl_company_grp
+#              - tbl_company
+#              - tbl_lender
+#          2:
+#            # name: BTS_loan_profile_20220606.xlsx
+#            name: BTS_loan_profile_20220606-testingdata.xlsx
+#            worksheets:
+#              - tbl_loan
+#              - tbl_facility
       template_l2:
         description: One Excel files from BTS
         excels:
           1:
             # name: BTS_tables_20220708.xlsx
-            name: BTS_tables_20220708-testingdata.xlsx
+            # name: BTS_tables_20220708-testingdata.xlsx
+            name: bts_data.xlsx
             worksheets:
               - tbl_company_grp
               - tbl_company
