@@ -28,14 +28,14 @@ def add_dash_app(server):
         server=server,
         url_base_pathname=URL_BASE,
         suppress_callback_exceptions=True,
-        external_stylesheets=['/static/style.css'],
+        external_stylesheets=['/static/style.css', '/static/dash-docs-base.css'],
         # external_scripts=['/static/script.js']
     )
 
     '''Dash app layout'''
     dash_app.layout = html.Div([
         # Project
-        html.H4('Upload project data file(s)'),
+        html.H5('Upload project data file(s)'),
         html.Label('Acceptable file formats:'),
         html.Ul([
             html.Li('[Recommended] 1 Excel file with EXACT worksheet name "projects"'),
@@ -59,14 +59,14 @@ def add_dash_app(server):
                 html.A('Select File')
             ]),
             style={
-                'width': '100%',
-                'height': '60px',
-                'lineHeight': '60px',
+                'width': '80%',
+                'height': '50px',
+                'lineHeight': '50px',
                 'borderWidth': '1px',
                 'borderStyle': 'dashed',
                 'borderRadius': '5px',
                 'textAlign': 'center',
-                'margin': '10px'
+                'margin': 'auto',
             },
             # Not allow multiple files to be uploaded
             multiple=False
@@ -74,7 +74,7 @@ def add_dash_app(server):
         html.Hr(),
 
         # Loan
-        html.H4('Upload loan data file'),
+        html.H5('Upload loan data file'),
         html.Label('Acceptable file formats:'),
         html.Ul([
             html.Li('[Recommended] 4-5 CSV files with file names containing "company_grp" (optional), "company", '
@@ -99,14 +99,14 @@ def add_dash_app(server):
                 html.A('Select File')
             ]),
             style={
-                'width': '100%',
-                'height': '60px',
-                'lineHeight': '60px',
+                'width': '80%',
+                'height': '50px',
+                'lineHeight': '50px',
                 'borderWidth': '1px',
                 'borderStyle': 'dashed',
                 'borderRadius': '5px',
                 'textAlign': 'center',
-                'margin': '10px'
+                'margin': 'auto',
             },
             # Allow multiple files to be uploaded
             multiple=True
@@ -114,7 +114,7 @@ def add_dash_app(server):
         html.Hr(),
 
         # Housekeeping
-        html.H4('Housekeeping'),
+        html.H5('Housekeeping'),
         html.Label('Purge duplicated backup data (in folder: "app/dash/data/input/backup/")'),
         html.Div([
             html.Div([
@@ -124,7 +124,7 @@ def add_dash_app(server):
         html.Hr(),
 
         # Display results of action
-        html.H4('Results'),
+        html.H5('Results'),
         html.Div(id='result-display-project'),
         html.Div(id='result-display-loan'),
         html.Div(id='result-display-download'),
@@ -133,7 +133,6 @@ def add_dash_app(server):
 
         # Add script to the end of page
         # DeferScript(src='/static/script.js'),
-
 
     ])
 
