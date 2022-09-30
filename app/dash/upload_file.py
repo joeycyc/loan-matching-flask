@@ -1,13 +1,15 @@
 import base64
 import datetime as dt
-import io, shutil
+import io, shutil, os
 import numpy as np
 import pandas as pd
 import re
-from dash import Dash, dcc, html, dash_table, Input, Output, State
+from dash import Dash, dcc, html, dash_table, Input, Output, State, ctx
 from pandas_schema import Column, Schema
 from pandas_schema.validation import LeadingWhitespaceValidation, TrailingWhitespaceValidation, IsDistinctValidation, \
     IsDtypeValidation, CanConvertValidation, MatchesPatternValidation, InRangeValidation, InListValidation
+# from dash_extensions import DeferScript
+import hashlib
 
 URL_BASE = '/upload_file/'
 TODAY = dt.datetime.today()
@@ -23,18 +25,23 @@ def add_dash_app(server):
     """Create Plotly Dash dashboard."""
 
     dash_app = Dash(
-            server=server,
-            url_base_pathname=URL_BASE,
-            suppress_callback_exceptions=True,
-            external_stylesheets=['/static/style.css']
-        )
+        server=server,
+        url_base_pathname=URL_BASE,
+        suppress_callback_exceptions=True,
+        external_stylesheets=['/static/style.css'],
+        # external_scripts=['/static/script.js']
+    )
 
     '''Dash app layout'''
     dash_app.layout = html.Div([
         # Project
-        html.Label('Upload loan data file(s)', style={'font-weight': 'bold'}),
-        html.Br(),
-        html.Label('Acceptable file formats: Excel with worksheets "projects", CSV'),
+        html.H4('Upload project data file(s)'),
+        html.Label('Acceptable file formats:'),
+        html.Ul([
+            html.Li('[Recommended] 1 Excel file with EXACT worksheet name "projects"'),
+            html.Li('CSV'),
+        ]),
+
         html.Div([
             html.Div([
                 html.Button("Download latest data", id="btn-dl-latest-data-project"),
@@ -46,7 +53,7 @@ def add_dash_app(server):
             ], style={'display': 'inline-block'}),
         ]),
         dcc.Upload(
-            id='upload-excel-project',
+            id='upload-file-project',
             children=html.Div([
                 'Drag and Drop or ',
                 html.A('Select File')
@@ -64,16 +71,15 @@ def add_dash_app(server):
             # Not allow multiple files to be uploaded
             multiple=False
         ),
-        html.Hr(),  # horizontal line
+        html.Hr(),
 
         # Loan
-        html.Label('Upload project data file', style={'font-weight': 'bold'}),
-        html.Br(),
+        html.H4('Upload loan data file'),
         html.Label('Acceptable file formats:'),
         html.Ul([
             html.Li('[Recommended] 4-5 CSV files with file names containing "company_grp" (optional), "company", '
                     '"lender", "loan", "loan_facility"'),
-            html.Li('1 Excel file with worksheet names (must be exactly) "tbl_company_grp", "tbl_company", '
+            html.Li('1 Excel file with EXACT worksheet names "tbl_company_grp", "tbl_company", '
                     '"tbl_lender", "tbl_loan", and "tbl_loan_facility"'),
         ]),
         html.Div([
@@ -87,7 +93,7 @@ def add_dash_app(server):
             ], style={'display': 'inline-block'}),
         ]),
         dcc.Upload(
-            id='upload-excel-loan',
+            id='upload-file-loan',
             children=html.Div([
                 'Drag and Drop or ',
                 html.A('Select File')
@@ -105,20 +111,40 @@ def add_dash_app(server):
             # Allow multiple files to be uploaded
             multiple=True
         ),
-        html.Hr(),  # horizontal line
+        html.Hr(),
 
-        # Data preview
-        html.Label('Data preview', style={'font-weight': 'bold'}),
-        html.Div(id='data-uploaded-project'),
-        html.Div(id='data-uploaded-loan'),
+        # Housekeeping
+        html.H4('Housekeeping'),
+        html.Label('Purge duplicated backup data (in folder: "app/dash/data/input/backup/")'),
+        html.Div([
+            html.Div([
+                html.Button("Purge", id="btn-purge-backup-data"),
+            ], style={'display': 'inline-block'}),
+        ]),
+        html.Hr(),
+
+        # Display results of action
+        html.H4('Results'),
+        html.Div(id='result-display-project'),
+        html.Div(id='result-display-loan'),
+        html.Div(id='result-display-download'),
+        html.Div(id='result-display-purge'),
+        html.Hr(),
+
+        # Add script to the end of page
+        # DeferScript(src='/static/script.js'),
+
+
     ])
 
     '''Dash app callbacks'''
-    @dash_app.callback(Output('data-uploaded-project', 'children'),
-                       Input('upload-excel-project', 'contents'),
-                       State('upload-excel-project', 'filename'),
-                       State('upload-excel-project', 'last_modified'))
-    def process_project_file_uploaded(content, filename, last_modified_date):
+    # Callbacks for uploading data
+    @dash_app.callback(
+        Output('result-display-project', 'children'),
+        Input('upload-file-project', 'contents'),
+        State('upload-file-project', 'filename')
+    )
+    def process_project_file_uploaded(content, filename):
         """Parse project file content, upload to file server and return the HTML content for display"""
         if content is not None:
             # content_type = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64'
@@ -135,18 +161,26 @@ def add_dash_app(server):
                         project_df = pd.read_excel(io.BytesIO(decoded), sheet_name='projects')
                     except Exception as e:
                         print(e)
-                        return html.Pre(["ERROR: Worksheet 'projects' not found."])
+                        return html.Div([
+                            html.Pre(["ERROR: Worksheet 'projects' not found."])
+                        ])
                 elif 'csv' in filename:
                     try:
                         project_df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
                     except Exception as e:
                         print(e)
-                        return html.Pre(["ERROR: Failed to load CSV file."])
+                        return html.Div([
+                            html.Pre(["ERROR: Failed to load CSV file."])
+                        ])
                 else:
-                    return html.Pre(['ERROR: The uploaded file is not Excel/ CSV'])
+                    return html.Div([
+                        html.Pre(['ERROR: The uploaded file is not Excel/ CSV'])
+                    ])
             except Exception as e:
                 print(e)
-                return html.Pre(['ERROR: Unknown error with the file uploaded.'])
+                return html.Div([
+                    html.Pre(['ERROR: Unknown error with the file uploaded.'])
+                ])
 
             # 1.2. Data fields
             # 1.2.1. Check if required fields are all present
@@ -154,7 +188,9 @@ def add_dash_app(server):
                                'land_cost_60_pct_inB', 'solo_jv']
             if not set(project_df.columns).issuperset(set(required_fields)):
                 missing_fields = set(required_fields).difference(set(project_df.columns))
-                return html.Pre([f'ERROR: Column(s) {", ".join(missing_fields)} not found.'])
+                return html.Div([
+                    html.Pre([f'ERROR: Column(s) {", ".join(missing_fields)} not found.'])
+                ])
 
             # 1.2.2. Value check
             value_error_strs = []
@@ -181,8 +217,10 @@ def add_dash_app(server):
 
             # Abort upload
             if len(value_error_strs) > 0:
-                return html.Pre(['ERROR: \n' + '\n'.join(value_error_strs)])
+                return html.Div([
+                    html.Pre(['ERROR: \n' + '\n'.join(value_error_strs)])
 
+                ])
             # 2. Data cleanness check, warning found in this stage will NOT abort the upload
             # 2.1. Schema check, including data type check
             project_df_schema = Schema([
@@ -233,7 +271,7 @@ def add_dash_app(server):
             return html.Div([
                 html.Div('File uploaded: ' + filename),
                 html.Pre(data_warning_str),
-                html.Div('Preview - "project"'),
+                html.Div('Table preview - project', style={'font-weight': 'bold'}),
                 dash_table.DataTable(
                     project_df.to_dict('records'),
                     [{'name': i, 'id': i} for i in project_df.columns]
@@ -246,9 +284,11 @@ def add_dash_app(server):
                 # })
             ])
 
-    @dash_app.callback(Output('data-uploaded-loan', 'children'),
-                       Input('upload-excel-loan', 'contents'),
-                       State('upload-excel-loan', 'filename'))
+    @dash_app.callback(
+        Output('result-display-loan', 'children'),
+        Input('upload-file-loan', 'contents'),
+        State('upload-file-loan', 'filename')
+    )
     def process_loan_file_uploaded(contents, filenames):
         """Parse loan file content, upload to file server and return the HTML content for display"""
         if contents is not None:
@@ -272,7 +312,9 @@ def add_dash_app(server):
                 file_count_failed = False
                 file_input_type = 'CSVs'
             if file_count_failed:
-                return html.Pre(['ERROR: Upload either 1 Excel or 4-5 CSV files.'])
+                return html.Div([
+                    html.Pre(['ERROR: Upload either 1 Excel or 4-5 CSV files.'])
+                ])
 
             # Extract raw data tables, if a table is not found, extract the previous version of data table
             # Initialize empty DataFrames
@@ -301,8 +343,10 @@ def add_dash_app(server):
                             dfs[df_name] = pd.read_excel(INPUT_DATA_DIR + BTS_DATA_FILENAME, sheet_name=ws_name)
                         except Exception as e:  # The previous data is also unavailable, abort upload
                             print(e)
-                            return html.Pre([f'ERROR: Worksheet "{ws_name}" not found, '
-                                             f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                            return html.Div([
+                                html.Pre([f'ERROR: Worksheet "{ws_name}" not found, '
+                                          f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                            ])
                 uploaded_filenames.append(filenames[0])
 
             elif file_input_type == 'CSVs':
@@ -335,8 +379,10 @@ def add_dash_app(server):
                             dfs[df_name] = pd.read_excel(INPUT_DATA_DIR + BTS_DATA_FILENAME, sheet_name=ws_name)
                         except Exception as e:  # The previous data is also unavailable, abort upload
                             print(e)
-                            return html.Pre([f'ERROR: Failed to load "{filename}", '
-                                             f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                            return html.Div([
+                                html.Pre([f'ERROR: Failed to load "{filename}", '
+                                          f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                            ])
                     # Fill in the missing DataFrame: if any DataFrame is empty, then load the previous data
                     for ws_name, df_name in zip(ws_names, df_names):
                         if dfs[df_name].empty:
@@ -344,8 +390,10 @@ def add_dash_app(server):
                                 dfs[df_name] = pd.read_excel(INPUT_DATA_DIR + BTS_DATA_FILENAME, sheet_name=ws_name)
                             except Exception as e:
                                 print(e)
-                                return html.Pre([f'ERROR: {df_name.replace("_df", "")} data is not uploaded, '
-                                                 f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                                return html.Div([
+                                    html.Pre([f'ERROR: {df_name.replace("_df", "")} data is not uploaded, '
+                                              f'and the previous data ({BTS_DATA_FILENAME}) is unavailable.'])
+                                ])
             else:
                 # Impossible to reach here
                 pass
@@ -375,8 +423,9 @@ def add_dash_app(server):
                 df = dfs[df_name]
                 if not set(df.columns).issuperset(set(required_fields)):
                     missing_fields = set(required_fields).difference(set(df.columns))
-                    return html.Pre([
-                        f'ERROR: Table {df_name.replace("_df", "")} - column(s) {", ".join(missing_fields)} not found.'
+                    return html.Div([
+                        html.Pre([f'ERROR: Table {df_name.replace("_df", "")} - column(s) '
+                                  f'{", ".join(missing_fields)} not found.'])
                     ])
 
             # 1.2.2. Value check
@@ -436,7 +485,9 @@ def add_dash_app(server):
 
             # Abort upload
             if len(value_error_strs) > 0:
-                return html.Pre(['ERROR: \n' + '\n'.join(value_error_strs)])
+                return html.Div([
+                    html.Pre(['ERROR: \n' + '\n'.join(value_error_strs)])
+                ])
 
             # 2. Data cleanness check, warning found in this stage will NOT abort the upload
             # 2.1. Schema check, including data type check
@@ -538,65 +589,102 @@ def add_dash_app(server):
             return html.Div([
                 html.Div('File(s) uploaded: ' + ', '.join(uploaded_filenames)),
                 html.Pre(data_warning_str),
+
                 html.Div([
-                    html.Label('Preview - "facility"'),
+                    html.Div('Table preview - facility', style={'font-weight': 'bold'}),
                     dash_tables['facility'],
                 ]),
                 html.Br(),
                 html.Div([
-                    html.Label('Preview - "loan"'),
+                    html.Div('Table preview - loan', style={'font-weight': 'bold'}),
                     dash_tables['loan'],
                 ]),
                 html.Br(),
                 html.Div([
-                    html.Label('Preview - "lender"'),
+                    html.Div('Table preview - lender', style={'font-weight': 'bold'}),
                     dash_tables['lender'],
                 ]),
                 html.Br(),
                 html.Div([
-                    html.Label('Preview - "company"'),
+                    html.Div('Table preview - company', style={'font-weight': 'bold'}),
                     dash_tables['company'],
                 ]),
                 html.Br(),
                 html.Div([
-                    html.Label('Preview - "company_grp"'),
+                    html.Div('Table preview - company_grp', style={'font-weight': 'bold'}),
                     dash_tables['company_grp'],
                 ]),
             ])
 
-    # TODO: Add error message if file not found
-
+    # # Callbacks for downloading data
     @dash_app.callback(
         Output("dl-latest-data-project", "data"),
-        Input("btn-dl-latest-data-project", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def dl_latest_project_data(n_clicks):
-        return dcc.send_file(INPUT_DATA_DIR + PROJECT_DATA_FILENAME)
-
-    @dash_app.callback(
         Output("dl-template-project", "data"),
-        Input("btn-dl-template-project", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def dl_project_data_template(n_clicks):
-        return dcc.send_file(INPUT_DATA_DIR + PROJECT_DATA_TEMPLATE_FILENAME)
-
-    @dash_app.callback(
         Output("dl-latest-data-loan", "data"),
-        Input("btn-dl-latest-data-loan", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def dl_latest_loan_data(n_clicks):
-        return dcc.send_file(INPUT_DATA_DIR + BTS_DATA_FILENAME)
-
-    @dash_app.callback(
         Output("dl-template-loan", "data"),
+        Output("result-display-download", 'children'),
+        Input("btn-dl-latest-data-project", "n_clicks"),
+        Input("btn-dl-template-project", "n_clicks"),
+        Input("btn-dl-latest-data-loan", "n_clicks"),
         Input("btn-dl-template-loan", "n_clicks"),
         prevent_initial_call=True,
     )
-    def dl_loan_data_template(n_clicks):
-        return dcc.send_file(INPUT_DATA_DIR + BTS_DATA_TEMPLATE_FILENAME)
+    def download_data(*args):
+        triggered_id = ctx.triggered_id
+        output_parameters_dict = {
+            'btn-dl-latest-data-project': (0, PROJECT_DATA_FILENAME),
+            'btn-dl-template-project': (1, PROJECT_DATA_TEMPLATE_FILENAME),
+            'btn-dl-latest-data-loan': (2, BTS_DATA_FILENAME),
+            'btn-dl-template-loan': (3, BTS_DATA_TEMPLATE_FILENAME),
+        }
+        filename = output_parameters_dict[triggered_id][1]
+        file_path = INPUT_DATA_DIR + filename
+
+        if os.path.isfile(file_path):
+            output = [
+                None, None, None, None,
+                html.Div([
+                    html.Div('File downloaded: ' + filename),
+                ])
+            ]
+            output[output_parameters_dict[triggered_id][0]] = dcc.send_file(file_path)
+            return tuple(output)
+        else:
+            return None, None, None, None, \
+                   html.Div([
+                       html.Div(f'ERROR: {filename} not found.'),
+                   ])
+
+    @dash_app.callback(
+        Output("result-display-purge", 'children'),
+        Input("btn-purge-backup-data", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def purge_backup_data(n_clicks):
+        # project_ws_names = ['projects']
+        bts_ws_names = ['tbl_company_grp', 'tbl_company', 'tbl_lender', 'tbl_loan', 'tbl_loan_facility']
+        md5_list = list()
+
+        for filename in os.listdir(BACKUP_DATA_DIR):
+            full_filename = os.path.join(BACKUP_DATA_DIR, filename)
+            df_content_str = ''
+            try:
+                if 'project' in filename:
+                    df_content_str += pd.read_excel(full_filename, sheet_name='projects').to_string()
+                elif 'bts' in filename:
+                    for ws_name in bts_ws_names:
+                        df_content_str += pd.read_excel(full_filename, sheet_name=ws_name).to_string()
+                else:
+                    raise Exception("File not containing data table(s).")
+                df_content_str = df_content_str.encode('utf-8')
+                md5_str = hashlib.md5(df_content_str).hexdigest()
+                if md5_str in md5_list:  # Same data already exists
+                    os.remove(full_filename)
+                else:
+                    md5_list.append(md5_str)
+            except Exception as e:
+                print(e)
+        return html.Div([html.Div('Purge completed.')])
 
     return server
 
