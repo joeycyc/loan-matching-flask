@@ -1414,7 +1414,8 @@ def add_dashboard(server):
         # routes_pathname_prefix='/dashboard_01/',
         url_base_pathname=URL_BASE,
         suppress_callback_exceptions=True,
-        external_stylesheets=['/static/style.css']
+        external_stylesheets=['/static/style.css'],
+        title='Matching 60% land costs with corporate loans'
     )
 
     dash_app.layout = \

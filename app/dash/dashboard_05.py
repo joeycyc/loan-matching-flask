@@ -1488,7 +1488,8 @@ def add_dashboard(server):
         server=server,
         url_base_pathname=URL_BASE,
         suppress_callback_exceptions=True,
-        external_stylesheets=['/static/style.css']
+        external_stylesheets=['/static/style.css'],
+        title='Matching 60% land costs with corporate loans'
     )
 
     '''Dash app layout'''

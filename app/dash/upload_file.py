@@ -29,6 +29,7 @@ def add_dash_app(server):
         url_base_pathname=URL_BASE,
         suppress_callback_exceptions=True,
         external_stylesheets=['/static/style.css', '/static/dash-docs-base.css'],
+        title='Upload & Manage Data Files'
         # external_scripts=['/static/script.js']
     )
 
@@ -42,6 +43,26 @@ def add_dash_app(server):
             html.Li('CSV'),
         ]),
 
+        dcc.Upload(
+            id='upload-file-project',
+            children=html.Div([
+                'Drag and Drop or ',
+                html.A('Select File')
+            ]),
+            style={
+                # 'width': '80%',
+                'max-width': '720px',
+                'height': '50px',
+                'lineHeight': '50px',
+                'borderWidth': '1px',
+                'borderStyle': 'dashed',
+                'borderRadius': '5px',
+                'textAlign': 'center',
+                # 'margin': 'auto',
+            },
+            # Not allow multiple files to be uploaded
+            multiple=False
+        ),
         html.Div([
             html.Div([
                 html.Button("Download latest data", id="btn-dl-latest-data-project"),
@@ -52,25 +73,6 @@ def add_dash_app(server):
                 dcc.Download(id="dl-template-project")
             ], style={'display': 'inline-block'}),
         ]),
-        dcc.Upload(
-            id='upload-file-project',
-            children=html.Div([
-                'Drag and Drop or ',
-                html.A('Select File')
-            ]),
-            style={
-                'width': '80%',
-                'height': '50px',
-                'lineHeight': '50px',
-                'borderWidth': '1px',
-                'borderStyle': 'dashed',
-                'borderRadius': '5px',
-                'textAlign': 'center',
-                'margin': 'auto',
-            },
-            # Not allow multiple files to be uploaded
-            multiple=False
-        ),
         html.Hr(),
 
         # Loan
@@ -82,6 +84,25 @@ def add_dash_app(server):
             html.Li('1 Excel file with EXACT worksheet names "tbl_company_grp", "tbl_company", '
                     '"tbl_lender", "tbl_loan", and "tbl_loan_facility"'),
         ]),
+
+        dcc.Upload(
+            id='upload-file-loan',
+            children=html.Div([
+                'Drag and Drop or ',
+                html.A('Select File')
+            ]),
+            style={
+                'max-width': '720px',
+                'height': '50px',
+                'lineHeight': '50px',
+                'borderWidth': '1px',
+                'borderStyle': 'dashed',
+                'borderRadius': '5px',
+                'textAlign': 'center',
+            },
+            # Allow multiple files to be uploaded
+            multiple=True
+        ),
         html.Div([
             html.Div([
                 html.Button("Download latest data", id="btn-dl-latest-data-loan"),
@@ -92,25 +113,6 @@ def add_dash_app(server):
                 dcc.Download(id="dl-template-loan")
             ], style={'display': 'inline-block'}),
         ]),
-        dcc.Upload(
-            id='upload-file-loan',
-            children=html.Div([
-                'Drag and Drop or ',
-                html.A('Select File')
-            ]),
-            style={
-                'width': '80%',
-                'height': '50px',
-                'lineHeight': '50px',
-                'borderWidth': '1px',
-                'borderStyle': 'dashed',
-                'borderRadius': '5px',
-                'textAlign': 'center',
-                'margin': 'auto',
-            },
-            # Allow multiple files to be uploaded
-            multiple=True
-        ),
         html.Hr(),
 
         # Housekeeping
@@ -125,24 +127,16 @@ def add_dash_app(server):
 
         # Display results of action
         html.H5('Results'),
-        html.Div(id='result-display-project'),
-        html.Div(id='result-display-loan'),
-        html.Div(id='result-display-download'),
-        html.Div(id='result-display-purge'),
+        html.Div(id='result-display'),
+
         html.Hr(),
 
         # Add script to the end of page
         # DeferScript(src='/static/script.js'),
 
-    ])
+    ], style={'max-width': '900px', 'margin': 'auto'})
 
     '''Dash app callbacks'''
-    # Callbacks for uploading data
-    @dash_app.callback(
-        Output('result-display-project', 'children'),
-        Input('upload-file-project', 'contents'),
-        State('upload-file-project', 'filename')
-    )
     def process_project_file_uploaded(content, filename):
         """Parse project file content, upload to file server and return the HTML content for display"""
         if content is not None:
@@ -275,19 +269,8 @@ def add_dash_app(server):
                     project_df.to_dict('records'),
                     [{'name': i, 'id': i} for i in project_df.columns]
                 ),
-                # html.H6(dt.datetime.fromtimestamp(last_modified_date)),
-                # For debugging, display the raw content provided by the web browser
-                # html.Pre(content[0:200] + '...', style={
-                #     'whiteSpace': 'pre-wrap',
-                #     'wordBreak': 'break-all'
-                # })
             ])
 
-    @dash_app.callback(
-        Output('result-display-loan', 'children'),
-        Input('upload-file-loan', 'contents'),
-        State('upload-file-loan', 'filename')
-    )
     def process_loan_file_uploaded(contents, filenames):
         """Parse loan file content, upload to file server and return the HTML content for display"""
         if contents is not None:
@@ -615,51 +598,7 @@ def add_dash_app(server):
                 ]),
             ])
 
-    # # Callbacks for downloading data
-    @dash_app.callback(
-        Output("dl-latest-data-project", "data"),
-        Output("dl-template-project", "data"),
-        Output("dl-latest-data-loan", "data"),
-        Output("dl-template-loan", "data"),
-        Output("result-display-download", 'children'),
-        Input("btn-dl-latest-data-project", "n_clicks"),
-        Input("btn-dl-template-project", "n_clicks"),
-        Input("btn-dl-latest-data-loan", "n_clicks"),
-        Input("btn-dl-template-loan", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def download_data(*args):
-        triggered_id = ctx.triggered_id
-        output_parameters_dict = {
-            'btn-dl-latest-data-project': (0, PROJECT_DATA_FILENAME),
-            'btn-dl-template-project': (1, PROJECT_DATA_TEMPLATE_FILENAME),
-            'btn-dl-latest-data-loan': (2, BTS_DATA_FILENAME),
-            'btn-dl-template-loan': (3, BTS_DATA_TEMPLATE_FILENAME),
-        }
-        filename = output_parameters_dict[triggered_id][1]
-        file_path = INPUT_DATA_DIR + filename
-
-        if os.path.isfile(file_path):
-            output = [
-                None, None, None, None,
-                html.Div([
-                    html.Div('File downloaded: ' + filename),
-                ])
-            ]
-            output[output_parameters_dict[triggered_id][0]] = dcc.send_file(file_path)
-            return tuple(output)
-        else:
-            return None, None, None, None, \
-                   html.Div([
-                       html.Div(f'ERROR: {filename} not found.'),
-                   ])
-
-    @dash_app.callback(
-        Output("result-display-purge", 'children'),
-        Input("btn-purge-backup-data", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def purge_backup_data(n_clicks):
+    def purge_backup_data():
         # project_ws_names = ['projects']
         bts_ws_names = ['tbl_company_grp', 'tbl_company', 'tbl_lender', 'tbl_loan', 'tbl_loan_facility']
         md5_list = list()
@@ -684,6 +623,60 @@ def add_dash_app(server):
             except Exception as e:
                 print(e)
         return html.Div([html.Div('Purge completed.')])
+
+    @dash_app.callback(
+        Output('result-display', 'children'),
+        Output('dl-latest-data-project', 'data'),
+        Output('dl-template-project', 'data'),
+        Output('dl-latest-data-loan', 'data'),
+        Output('dl-template-loan', 'data'),
+        Input('upload-file-project', 'contents'),
+        State('upload-file-project', 'filename'),
+        Input('upload-file-loan', 'contents'),
+        State('upload-file-loan', 'filename'),
+        Input('btn-dl-latest-data-project', 'n_clicks'),
+        Input('btn-dl-template-project', 'n_clicks'),
+        Input('btn-dl-latest-data-loan', 'n_clicks'),
+        Input('btn-dl-template-loan', 'n_clicks'),
+        Input('btn-purge-backup-data', 'n_clicks'),
+        prevent_initial_call=True,
+    )
+    def run_and_display_output(*args):
+        """Run different procedures and display results"""
+        ul_proj_file_content, ul_proj_file_filename, ul_loan_file_content, ul_loan_file_filename, _, _, _, _, _ = args
+        triggered_id = ctx.triggered_id
+        results = [html.Div([]), None, None, None, None]
+
+        if triggered_id == 'upload-file-project':
+            results[0] = process_project_file_uploaded(ul_proj_file_content, ul_proj_file_filename)
+
+        elif triggered_id == 'upload-file-loan':
+            results[0] = process_loan_file_uploaded(ul_loan_file_content, ul_loan_file_filename)
+
+        elif triggered_id in ['btn-dl-latest-data-project', 'btn-dl-template-project',
+                              'btn-dl-latest-data-loan', 'btn-dl-template-loan']:
+            output_parameters_dict = {
+                'btn-dl-latest-data-project': (PROJECT_DATA_FILENAME, 1),
+                'btn-dl-template-project': (PROJECT_DATA_TEMPLATE_FILENAME, 2),
+                'btn-dl-latest-data-loan': (BTS_DATA_FILENAME, 3),
+                'btn-dl-template-loan': (BTS_DATA_TEMPLATE_FILENAME, 4),
+            }
+            filename = output_parameters_dict[triggered_id][0]
+            file_path = INPUT_DATA_DIR + filename
+            if os.path.isfile(file_path):
+                results[output_parameters_dict[triggered_id][1]] = dcc.send_file(file_path)
+                results[0] = html.Div([html.Div('File downloaded: ' + filename)])
+            else:
+                results[0] = html.Div([html.Div(f'ERROR: {filename} not found.')])
+
+        elif triggered_id == 'btn-purge-backup-data':
+            results[0] = purge_backup_data()
+
+        else:
+            pass
+
+        return tuple(results)
+
 
     return server
 

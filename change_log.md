@@ -57,4 +57,9 @@
 2. Streamline codebase
 
 ### v22.9.30b
-1. Implemented upload function
+1. Implemented upload data file function
+
+### v22.10.3b
+1. Implemented download data file and template functions
+2. Implemented purge data function
+3. Enhanced webpage layout
