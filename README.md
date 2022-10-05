@@ -6,12 +6,12 @@ To run the application on Windows, execute `start.bat`.
 ## Installation
 1. Clone the project folder
 2. Set up Python virtual environment and install requirements
-3. Place the data files in `./app/dash/data/`
+3. Place the data files `project_data.xlsx`, `bts_data.xlsx`, `project_data_template.xlsx`, `bts_data_template.xlsx` in `app/dash/data/input/`
 
 ## Enhancement procedures
 ### To add new dashboard
-1. Add new `dashboard_xx.py` to app/dash/
-2. Add `render_dashboard_xx()` in app/dash/routes.py
+1. Add new `dashboard_xx.py` and `dash_config_xx.yaml` to `app/dash/`
+2. Add `render_dashboard_xx()` in `app/dash/routes.py`
 3. Add new link in `app/templates/index.html`
 4. Add following line in `create_app()` in `app/__init__.py`
     - `from app.dash.dashboard_xx import add_dashboard as add_dashboard_xx`

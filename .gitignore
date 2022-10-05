@@ -1,5 +1,7 @@
 .*
 !/.gitignore
+venv
+__pycache__/
 app/dash/data/input/*
 app/dash/data/output/*
 app/dash/data/input/backup/*
@@ -8,6 +10,8 @@ app/dash/data/input/backup/*
 !app/dash/data/output/note.txt
 !app/dash/data/input/backup/
 !app/dash/data/input/backup/note.txt
+!app/static/note.txt
+!app/assets/note.txt
 app/static/favicon.ico
-venv
-__pycache__/
+app/assets/favicon.ico
+desktop.ini

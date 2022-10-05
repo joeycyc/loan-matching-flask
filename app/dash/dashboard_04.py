@@ -2027,7 +2027,7 @@ def add_dashboard(server):
                         html.Label('(total amount is HK$' + ttl_cr_amt_str + 'B)', style={'font-size': '12px'}),
                         html.Br(),
 
-                        html.Label('Set aside HK$', style={'vertical-align': 'middle'}),
+                        html.Label('Set aside max. HK$', style={'vertical-align': 'middle'}),
                         dcc.Input(id='cr-ceiling', type='number',
                                   value=init_matching_object.REVOLVER_CEILING, min=0, max=99999,
                                   style={'width': '4vw', 'vertical-align': 'middle'}),

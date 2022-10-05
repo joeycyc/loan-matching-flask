@@ -1,0 +1,1 @@
+Static assets for Flask: place CSS, JS, favicon.ico here
