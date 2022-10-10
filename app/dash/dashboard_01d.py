@@ -1428,41 +1428,6 @@ def get_gantt_diff_bar_width_3(matching_object, stage_to_display, projects_to_di
 def add_dashboard(server):
     """Create Plotly Dash dashboard."""
 
-    '''Initial Matching'''
-    # Initial matching with default config, and extract the required data to be placed in initial Dash layout
-    # Load default config
-    with open(DASH_CONFIG_FILEPATH, 'r') as cf:
-        dash_config = yaml.safe_load(cf)
-
-    # Run matching
-    init_matching_object = LoanMatching(dash_config)
-
-    # Extract required data to be placed in initial Dash layout
-    all_stage_dicts = list(init_matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
-    all_stages = [stage_dict['value'] for stage_dict in all_stage_dicts]
-
-    all_projects = init_matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
-
-    uc_repl_opts_ = [
-        {'label': 'UC evergreen',
-         'value': 'input_uc_evergreen'},
-        {'label': 'UC need to fully cover Committed Revolver',
-         'value': 'input_uc_full_cover'},
-        {'label': 'Check replacement by net margin diff. x area (by net margin diff. only if not selected)',
-         'value': 'input_uc_check_saving_by_area'},
-    ]
-    uc_repl_default_values_ = [
-        [x['value'] for x in uc_repl_opts_][i]
-        for i, y in enumerate([
-            init_matching_object.UC_EVERGREEN,
-            init_matching_object.UC_FULL_COVER,
-            init_matching_object.UC_CHECK_SAVING_BY_AREA
-        ])
-        if y
-    ]  # ['input_uc_evergreen', 'input_uc_check_saving_by_area']
-
-    init_matching_object_pkl_str = codecs.encode(pickle.dumps(init_matching_object), "base64").decode()
-
     '''Create Dash app'''
     dash_app = Dash(
         server=server,
@@ -1473,84 +1438,124 @@ def add_dashboard(server):
     )
 
     '''Dash app layout'''
-    dash_app.layout = \
-        html.Div([
-            html.H3('Matching 60% land costs with corporate loans'),
+    def serve_layout():
+        # Initial matching with default config, and extract the required data to be placed in initial Dash layout
+        # Load default config
+        with open(DASH_CONFIG_FILEPATH, 'r') as cf:
+            dash_config = yaml.safe_load(cf)
 
-            # Panels
+        # Run matching
+        init_matching_object = LoanMatching(dash_config)
+
+        # Extract required data to be placed in initial Dash layout
+        all_stage_dicts = list(init_matching_object.STAGED_OUTPUTS_METADATA['stages'].values())
+        all_stages = [stage_dict['value'] for stage_dict in all_stage_dicts]
+
+        all_projects = init_matching_object.MASTER_OUTPUT['project_name'].dropna().unique()
+
+        uc_repl_opts_ = [
+            {'label': 'UC evergreen',
+             'value': 'input_uc_evergreen'},
+            {'label': 'UC need to fully cover Committed Revolver',
+             'value': 'input_uc_full_cover'},
+            {'label': 'Check replacement by net margin diff. x area (by net margin diff. only if not selected)',
+             'value': 'input_uc_check_saving_by_area'},
+        ]
+        uc_repl_default_values_ = [
+            [x['value'] for x in uc_repl_opts_][i]
+            for i, y in enumerate([
+                init_matching_object.UC_EVERGREEN,
+                init_matching_object.UC_FULL_COVER,
+                init_matching_object.UC_CHECK_SAVING_BY_AREA
+            ])
+            if y
+        ]  # ['input_uc_evergreen', 'input_uc_check_saving_by_area']
+
+        init_matching_object_pkl_str = codecs.encode(pickle.dumps(init_matching_object), "base64").decode()
+
+
+        layout = \
             html.Div([
-                # (1) Left: Matching parameters selection panel
+                html.H3('Matching 60% land costs with corporate loans'),
+
+                # Panels
                 html.Div([
-                    html.H4('Matching parameters'),
-                    # Target prepayment date delta (tpp_date_delta_ymd)
-                    html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
-                    html.Label('years '),
-                    dcc.Input(id='tpp-date-delta-month', type='number', placeholder='Month',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
-                    html.Label('months '),
-                    dcc.Input(id='tpp-date-delta-day', type='number', placeholder='Day',
-                              value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
-                    html.Label('days '),
-                    html.Br(),
-                    # Equity
-                    html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
-                    dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
-                              value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
-                    html.Br(),
-                    # Uncommitted Revolver options
-                    html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
-                    dcc.Checklist(id='input-uc-options', options=uc_repl_opts_, value=uc_repl_default_values_),
-                    # Button to rerun matching
-                    html.Button('Rerun matching', id='btn-rerun-matching', className='button'),
-                    # Button to refresh figure
-                    # html.Button('Refresh chart', id='btn-refresh-chart', className='button'),
-                    # Button to show/ hide matching scheme
-                    html.Button('Show/ hide matching scheme', id='btn-show-scheme', className='button'),
-                ], className='column left-column card'),
-                # (2) Right: Interactive visualization panel
-                html.Div([
-                    html.H4('Interactive visualization'),
-                    dcc.Dropdown(options=all_stage_dicts, value=all_stages[0], id='filter-stage',),
-                    dcc.Dropdown(options=all_projects, value=all_projects, multi=True, id='filter-projects',),
-                    dcc.RadioItems(
-                        options=[{'label': '1. Simple Gantt chart', 'value': 13},
-                                 {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
-                        value=13,
-                        inline=True,
-                        id='chart-type',
-                    ),
+                    # (1) Left: Matching parameters selection panel
                     html.Div([
+                        html.H4('Matching parameters'),
+                        # Target prepayment date delta (tpp_date_delta_ymd)
+                        html.Label('Target prepayment date delta: ', style={'font-weight': 'bold'}),
+                        dcc.Input(id='tpp-date-delta-year', type='number', placeholder='Year',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[0], min=-99, max=0, step=1),
+                        html.Label('years '),
+                        dcc.Input(id='tpp-date-delta-month', type='number', placeholder='Month',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[1], min=-11, max=0, step=1),
+                        html.Label('months '),
+                        dcc.Input(id='tpp-date-delta-day', type='number', placeholder='Day',
+                                  value=init_matching_object.TPP_DATE_DELTA_YMD[2], min=-31, max=0, step=1),
+                        html.Label('days '),
+                        html.Br(),
+                        # Equity
+                        html.Label('Equity (HK$B): ', style={'font-weight': 'bold'}),
+                        dcc.Input(id='input-equity-amt', type='number', placeholder='Equity',
+                                  value=init_matching_object.DASH_CONFIG['equity']['amt_in_billion']),
+                        html.Br(),
+                        # Uncommitted Revolver options
+                        html.Label('Uncommitted Revolver (UC) replacement options: ', style={'font-weight': 'bold'}),
+                        dcc.Checklist(id='input-uc-options', options=uc_repl_opts_, value=uc_repl_default_values_),
+                        # Button to rerun matching
+                        html.Button('Rerun matching', id='btn-rerun-matching', className='button'),
+                        # Button to refresh figure
+                        # html.Button('Refresh chart', id='btn-refresh-chart', className='button'),
+                        # Button to show/ hide matching scheme
+                        html.Button('Show/ hide matching scheme', id='btn-show-scheme', className='button'),
+                    ], className='column left-column card'),
+                    # (2) Right: Interactive visualization panel
+                    html.Div([
+                        html.H4('Interactive visualization'),
+                        dcc.Dropdown(options=all_stage_dicts, value=all_stages[0], id='filter-stage',),
+                        dcc.Dropdown(options=all_projects, value=all_projects, multi=True, id='filter-projects',),
+                        dcc.RadioItems(
+                            options=[{'label': '1. Simple Gantt chart', 'value': 13},
+                                     {'label': '2. Gantt chart with diff. bar height', 'value': 23}],
+                            value=13,
+                            inline=True,
+                            id='chart-type',
+                        ),
                         html.Div([
-                            html.Label('Bar height: ', style={'font-weight': 'bold'}, className='side-by-side'),
-                            dcc.Slider(20, 100, value=30, included=True, marks=None, id='bar-height'),
-                        ], className='column'),
-                        html.Div([
-                            html.Label('Bar height range (for chart type #2 only): ',
-                                       style={'font-weight': 'bold'}, className='side-by-side'),
-                            dcc.RangeSlider(0, 1.5, step=0.05, value=[0.25, 1], marks=None,
-                                            id='bar-height-range'),
-                        ], className='column'),
-                    ], className='row'),
+                            html.Div([
+                                html.Label('Bar height: ', style={'font-weight': 'bold'}, className='side-by-side'),
+                                dcc.Slider(20, 100, value=30, included=True, marks=None, id='bar-height'),
+                            ], className='column'),
+                            html.Div([
+                                html.Label('Bar height range (for chart type #2 only): ',
+                                           style={'font-weight': 'bold'}, className='side-by-side'),
+                                dcc.RangeSlider(0, 1.5, step=0.05, value=[0.25, 1], marks=None,
+                                                id='bar-height-range'),
+                            ], className='column'),
+                        ], className='row'),
 
-                ], className='column right-column card'),
-            ], className='row'),
+                    ], className='column right-column card'),
+                ], className='row'),
 
-            # (3) Bottom/ Toggle: Matching scheme
-            html.Div([
+                # (3) Bottom/ Toggle: Matching scheme
                 html.Div([
-                    html.H4('Current matching scheme'),
-                    html.Div(id='selected-input-display'),
-                ], className='full-span-column card'),
-            ], className='row', id='matching-scheme-info-box'),
+                    html.Div([
+                        html.H4('Current matching scheme'),
+                        html.Div(id='selected-input-display'),
+                    ], className='full-span-column card'),
+                ], className='row', id='matching-scheme-info-box'),
 
-            # (4) Graph
-            html.Div(dcc.Graph(id='figure-output'), className='card'),
+                # (4) Graph
+                html.Div(dcc.Graph(id='figure-output'), className='card'),
 
-            # (5) Store
-            dcc.Store(id='current-matching-object', data={'current_matching_object': init_matching_object_pkl_str}),
-        ])
+                # (5) Store
+                dcc.Store(id='current-matching-object', data={'current_matching_object': init_matching_object_pkl_str}),
+            ])
+
+        return layout
+
+    dash_app.layout = serve_layout
 
     '''Callbacks'''
     @dash_app.callback(
