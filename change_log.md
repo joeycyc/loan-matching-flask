@@ -63,3 +63,7 @@
 1. Implemented download data file and template functions
 2. Implemented purge data function
 3. Enhanced webpage layout
+
+### v22.10.10b
+1. Adopted dynamic layout for rendering the project dropdown menu based on the latest data
+2. Streamlined code to share the same LoanMatching class

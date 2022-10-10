@@ -1,5 +1,8 @@
 # Loan Matching 2.0 - Flask Application
 
+## Objective
+To visualize the back-to-back support of loan facilities on development project (DP) funding needs
+
 ## Usage
 To run the application on Windows, execute `./start.bat`.
 
