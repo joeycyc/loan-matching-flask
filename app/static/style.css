@@ -25,6 +25,14 @@ ol {
   margin: 2px;
 }
 
+a {
+  text-decoration: none;
+}
+
+a:hover, a:visited, a:active, a:focus {
+  color:black;
+}
+
 /*
 label + ul {
     margin-top: -1px;

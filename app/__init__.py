@@ -20,8 +20,9 @@ def create_app():
         flask_server.register_blueprint(dash_bp)
 
         # Process dash apps
-        from app.dash.dashboard_01 import add_dashboard as add_dashboard_01
-        flask_server = add_dashboard_01(flask_server)
+        # [Obsolete]
+        # from app.dash.dashboard_01 import add_dashboard as add_dashboard_01
+        # flask_server = add_dashboard_01(flask_server)
         # from app.dash.dashboard_01b import add_dashboard as add_dashboard_01b
         # flask_server = add_dashboard_01b(flask_server)
         # from app.dash.dashboard_01c import add_dashboard as add_dashboard_01c

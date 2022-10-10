@@ -852,7 +852,7 @@ class LoanMatching:
                     3: {'value': 'stage 3', 'label': 'Stage 3: Term+RTN+Equity'}
                 }
             }
-        # ===== End of Matching Scheme #1 ===== #
+        # ===== End of Matching Scheme 1 ===== #
 
         # ===== Matching Scheme 2 ===== #
         elif scheme == 2:
@@ -902,7 +902,7 @@ class LoanMatching:
                         'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
                 }
             }
-        # ===== End of Matching Scheme #2 ===== #
+        # ===== End of Matching Scheme 2 ===== #
 
         # ===== Matching Scheme 3 ===== #
         elif scheme == 3:
@@ -964,7 +964,7 @@ class LoanMatching:
                         'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
                 }
             }
-        # ===== End of Matching Scheme #3 ===== #
+        # ===== End of Matching Scheme 3 ===== #
 
         # ===== Matching Scheme 4 ===== #
         elif scheme == 4:
@@ -1062,7 +1062,7 @@ class LoanMatching:
                         'label': 'Stage 3: Term + Committed RTN + Uncommitted RTN Replacement + Equity'}
                 }
             }
-        # ===== End of Matching Scheme #3 ===== #
+        # ===== End of Matching Scheme 4 ===== #
 
         '''(2) Tidy up result'''
         self.MASTER_OUTPUT = pd.DataFrame()
