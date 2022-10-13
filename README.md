@@ -4,14 +4,20 @@
 To visualize the back-to-back support of loan facilities on development project (DP) funding needs.
 
 ## Usage
-To run the application on Windows, execute `./start.bat`.
+To run the application on Windows, execute `.\start.bat`.
+
+## GUI
+![](https://github.com/joeycyc/loan-matching-flask/github/intro.gif)
+
+## Program Logic
+For the underlying logic of loan matching, please view [this]((https://github.com/joeycyc/loan-matching-flask/github/implementation_details.pdf)).
 
 ## Installation
 1. Clone the project folder
 2. Set up Python virtual environment (Python >= 3.8) and install requirements
 3. Place the data files `project_data.xlsx`, `bts_data.xlsx`, `project_data_template.xlsx`, `bts_data_template.xlsx` in `app/dash/data/input/`
 
-## Enhancement procedures
+## Enhancement Procedures
 ### To add new dashboard
 1. Add new `dashboard_xx.py` and `dash_config_xx.yaml` to `app/dash/`
 2. Add `render_dashboard_xx()` in `app/dash/routes.py`
