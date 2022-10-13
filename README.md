@@ -7,10 +7,10 @@ To visualize the back-to-back support of loan facilities on development project 
 To run the application on Windows, execute `.\start.bat`.
 
 ## GUI
-![](https://github.com/joeycyc/loan-matching-flask/github/intro.gif)
+![](https://github.com/joeycyc/loan-matching-flask/blob/master/github/intro.gif)
 
 ## Program Logic
-For the underlying logic of loan matching, please view [this]((https://github.com/joeycyc/loan-matching-flask/github/implementation_details.pdf)).
+For the underlying logic of loan matching, please view [this](https://github.com/joeycyc/loan-matching-flask/blob/master/github/implementation_details.pdf).
 
 ## Installation
 1. Clone the project folder
