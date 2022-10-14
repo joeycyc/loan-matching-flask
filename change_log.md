@@ -68,6 +68,7 @@
 1. Adopted dynamic layout for rendering the project dropdown menu based on the latest data
 2. Streamlined code to share the same LoanMatching class
 
-### v22.10.10a
-1. Stablized version
+### v22.10.10
+1. Release version
 2. Updated documentation
+
