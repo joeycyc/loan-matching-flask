@@ -30,7 +30,7 @@ Please view [Implementation Details](https://github.com/joeycyc/loan-matching-fl
     - `from app.dash.dashboard_xx import add_dashboard as add_dashboard_xx`
     - `flask_server = add_dashboard_xx(flask_server)`
 
-## Reference:
+## Reference
 1. [Integrate Plotly Dash Into Your Flask App](https://hackersandslackers.com/plotly-dash-with-flask/)
 2. How to embed a Dash app into an existing Flask app
     - [Tutorial](https://medium.com/@olegkomarov_77860/how-to-embed-a-dash-app-into-an-existing-flask-app-ea05d7a2210b)
