@@ -4,21 +4,25 @@
 To visualize the back-to-back support of loan facilities on development project (DP) funding needs.
 
 ## Usage
-To run the application on Windows, execute `.\start.bat`.
+### Run application
+- On Windows, execute `.\start.bat`
+- On UNIX type OS, execute `wsgi.py`
 
-## GUI
+### GUI
+View [here](https://github.com/joeycyc/loan-matching-flask/blob/master/github/intro.gif) if you cannot see the GIF.
 ![](https://github.com/joeycyc/loan-matching-flask/blob/master/github/intro.gif)
 
 ## Program Logic
-For the underlying logic of loan matching, please view [this](https://github.com/joeycyc/loan-matching-flask/blob/master/github/implementation_details.pdf).
+Please view [Implementation Details](https://github.com/joeycyc/loan-matching-flask/blob/master/github/implementation_details.pdf) for the For the underlying logic of loan matching.
 
-## Installation
+## Operation Procedures
+### Installation
 1. Clone the project folder
 2. Set up Python virtual environment (Python >= 3.8) and install requirements
 3. Place the data files `project_data.xlsx`, `bts_data.xlsx`, `project_data_template.xlsx`, `bts_data_template.xlsx` in `app/dash/data/input/`
 
-## Enhancement Procedures
-### To add new dashboard
+### Enhancement
+#### To add new dashboard
 1. Add new `dashboard_xx.py` and `dash_config_xx.yaml` to `app/dash/`
 2. Add `render_dashboard_xx()` in `app/dash/routes.py`
 3. Add new link in `app/templates/index.html`
