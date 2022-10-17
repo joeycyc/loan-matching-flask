@@ -13,7 +13,7 @@ View [here](https://github.com/joeycyc/loan-matching-flask/blob/master/blob/intr
 ![](https://github.com/joeycyc/loan-matching-flask/blob/master/blob/intro.gif)
 
 ## Program Logic
-Please view [Implementation Details](https://github.com/joeycyc/loan-matching-flask/blob/master/github/implementation_details.pdf) for the For the underlying logic of loan matching.
+Please view [Implementation Details](https://github.com/joeycyc/loan-matching-flask/blob/master/blob/implementation_details.pdf) for the For the underlying logic of loan matching.
 
 ## Operation Procedures
 ### Installation
