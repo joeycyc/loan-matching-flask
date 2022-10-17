@@ -9,8 +9,8 @@ To visualize the back-to-back support of loan facilities on development project 
 - On UNIX type OS, execute `wsgi.py`
 
 ### GUI
-View [here](https://github.com/joeycyc/loan-matching-flask/blob/master/github/intro.gif) if you cannot see the GIF.
-![](https://github.com/joeycyc/loan-matching-flask/blob/master/github/intro.gif)
+View [here](https://github.com/joeycyc/loan-matching-flask/blob/master/blob/intro.gif) if you cannot see the GIF.
+![](https://github.com/joeycyc/loan-matching-flask/blob/master/blob/intro.gif)
 
 ## Program Logic
 Please view [Implementation Details](https://github.com/joeycyc/loan-matching-flask/blob/master/github/implementation_details.pdf) for the For the underlying logic of loan matching.
